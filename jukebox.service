@@ -27,8 +27,13 @@ Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=PULSE_RUNTIME_PATH=/run/user/1000/pulse
 Environment=PIPEWIRE_RUNTIME_DIR=/run/user/1000
 Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
-# Valores por defecto; rockola.env puede sobrescribir pantalla HDMI
-Environment=ROCKOLA_MPV_FS_SCREEN=1
+# Pantalla gráfica (XWayland) — mpv --vo=x11 usa esto para la tele
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+# Valores por defecto; rockola.env puede sobrescribir
+Environment=ROCKOLA_VIDEO_OUTPUT=HDMI-A-2
+Environment=ROCKOLA_X11_SCREEN=1
+Environment=ROCKOLA_VIDEO_GEOMETRY=1920x1080+1920+0
 EnvironmentFile=-/home/saskweise/Rockola-Raspberry/rockola.env
 
 SupplementaryGroups=gpio video audio render

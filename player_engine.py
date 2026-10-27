@@ -187,9 +187,15 @@ class PlayerEngine:
         # Pantalla de vídeo (tele / HDMI). Ver scripts/configure-displays.sh
         self._fs_screen = os.environ.get("ROCKOLA_MPV_FS_SCREEN", "").strip()
         self._video_output = os.environ.get("ROCKOLA_VIDEO_OUTPUT", "").strip()
-        # p.ej. 1920x1080+0+0 — la tele debe estar en 0,0 (ver configure-displays.sh)
-        self._video_geometry = os.environ.get("ROCKOLA_VIDEO_GEOMETRY", "").strip()
+        # Geometría X11 de la tele (p.ej. 1920x1080+1920+0). Ver configure-displays.sh
+        self._video_geometry = os.environ.get(
+            "ROCKOLA_VIDEO_GEOMETRY", "1920x1080+1920+0"
+        ).strip()
+        # Índice xrandr de la tele (HDMI-A-2 suele ser 1)
+        self._x11_screen = os.environ.get("ROCKOLA_X11_SCREEN", "1").strip() or "1"
         self._drm_connector = os.environ.get("ROCKOLA_MPV_DRM_CONNECTOR", "").strip()
+        # En Pi/labwc, SDL ignora el monitor: forzar X11 vía XWayland
+        self._video_vo = os.environ.get("ROCKOLA_MPV_VO", "x11").strip() or "x11"
         # Audio: pipewire/pulse/alsa. Ej: ROCKOLA_AO=alsa  o  ROCKOLA_AUDIO_DEVICE=...
         self._ao = os.environ.get("ROCKOLA_AO", "pipewire,pulse,alsa").strip()
         self._audio_device = os.environ.get("ROCKOLA_AUDIO_DEVICE", "").strip()
@@ -590,28 +596,27 @@ class PlayerEngine:
                     ]
                 )
             else:
-                # vo/sdl (defecto en esta Pi) manda fullscreen a la salida en 0,0.
-                # configure-displays.sh coloca la TELE en 0,0 y la táctil en 1920,0.
+                # labwc+SDL siempre cae en la táctil. X11/XWayland sí respeta --screen.
+                if platform.system() != "Windows":
+                    cmd.append(f"--vo={self._video_vo}")
                 if self._video_geometry:
                     cmd.append(f"--geometry={self._video_geometry}")
                 cmd.append("--fullscreen")
-                cmd.append("--fs-screen=0")
-                cmd.append("--screen=0")
+                cmd.append(f"--screen={self._x11_screen}")
+                cmd.append(f"--fs-screen={self._x11_screen}")
                 if self._video_output:
                     cmd.append(f"--fs-screen-name={self._video_output}")
                     cmd.append(f"--screen-name={self._video_output}")
-                elif self._fs_screen != "":
-                    cmd.append(f"--fs-screen={self._fs_screen}")
-                    cmd.append(f"--screen={self._fs_screen}")
                 if self._hwdec and self._hwdec.lower() not in {"no", "none", "off", "0"}:
                     cmd.append(f"--hwdec={self._hwdec}")
                 if self._drm_connector:
                     cmd.append(f"--drm-connector={self._drm_connector}")
                 logger.info(
-                    "mpv vídeo → geo=%r output=%r ao=%r",
+                    "mpv vídeo → vo=%r screen=%r geo=%r output=%r",
+                    self._video_vo if platform.system() != "Windows" else "default",
+                    self._x11_screen,
                     self._video_geometry or None,
                     self._video_output or None,
-                    self._ao,
                 )
         else:
             cmd.append("--no-video")
@@ -651,6 +656,14 @@ class PlayerEngine:
         env = os.environ.copy()
         scripts_dir = str(Path(sys.executable).resolve().parent)
         env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
+        # XWayland para --vo=x11 (vídeo en la tele)
+        if platform.system() != "Windows":
+            env.setdefault("DISPLAY", ":0")
+            env.setdefault("WAYLAND_DISPLAY", "wayland-0")
+            env.setdefault(
+                "XDG_RUNTIME_DIR",
+                os.environ.get("XDG_RUNTIME_DIR", "/run/user/1000"),
+            )
 
         popen_kwargs: dict[str, Any] = {
             "stdout": subprocess.DEVNULL,
