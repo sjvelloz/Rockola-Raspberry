@@ -96,12 +96,29 @@ if [ -z "${VIDEO_IDX}" ]; then
   echo "Aviso: solo se ve una pantalla. mpv usará pantalla 0."
 fi
 
+# Recalcular índice de vídeo según el orden ACTUAL de salidas (el de mpv/labwc)
+VIDEO_IDX=""
+UI_IDX=""
+for i in "${!OUTS[@]}"; do
+  if [ "${OUTS[$i]}" = "${VIDEO_NAME:-}" ]; then
+    VIDEO_IDX="$i"
+  fi
+  if [ "${OUTS[$i]}" = "${UI_NAME:-}" ]; then
+    UI_IDX="$i"
+  fi
+done
+# Si no hay nombre, fallback numérico anterior
+if [ -z "${VIDEO_IDX}" ]; then
+  VIDEO_IDX=0
+fi
+
 cat > "$ENV_FILE" <<EOF
 # Generado por configure-displays.sh — $(date -Iseconds)
-# Pantalla del VÍDEO (tele) para mpv fullscreen
+# Pantalla del VÍDEO (tele). Preferir ROCKOLA_VIDEO_OUTPUT (nombre);
+# el índice solo es respaldo (cambia con el orden del compositor).
+ROCKOLA_VIDEO_OUTPUT=${VIDEO_NAME:-HDMI-A-2}
+ROCKOLA_UI_OUTPUT=${UI_NAME:-HDMI-A-1}
 ROCKOLA_MPV_FS_SCREEN=${VIDEO_IDX}
-ROCKOLA_VIDEO_OUTPUT=${VIDEO_NAME:-}
-ROCKOLA_UI_OUTPUT=${UI_NAME:-}
 EOF
 
 echo

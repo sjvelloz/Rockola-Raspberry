@@ -591,16 +591,21 @@ class PlayerEngine:
                 cmd.append("--fullscreen")
                 if self._hwdec and self._hwdec.lower() not in {"no", "none", "off", "0"}:
                     cmd.append(f"--hwdec={self._hwdec}")
-                # Tele / HDMI de vídeo (no la táctil). Índice 1 = HDMI-A-2 en esta Pi.
-                if self._fs_screen != "":
+                # Tele / HDMI de vídeo (NO la táctil).
+                # Preferir nombre de salida: el índice de --fs-screen cambia según
+                # el orden del compositor (aquí 1 era la Mediatrix, no la HP).
+                if self._video_output:
+                    cmd.append(f"--fs-screen-name={self._video_output}")
+                    cmd.append(f"--screen-name={self._video_output}")
+                elif self._fs_screen != "":
                     cmd.append(f"--fs-screen={self._fs_screen}")
                     cmd.append(f"--screen={self._fs_screen}")
                 if self._drm_connector:
                     cmd.append(f"--drm-connector={self._drm_connector}")
                 logger.info(
-                    "mpv vídeo → fs-screen=%r output=%r ao=%r hwdec=%r",
-                    self._fs_screen or None,
+                    "mpv vídeo → output=%r fs-screen=%r ao=%r hwdec=%r",
                     self._video_output or None,
+                    self._fs_screen or None,
                     self._ao,
                     self._hwdec,
                 )
