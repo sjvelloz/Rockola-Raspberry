@@ -32,6 +32,25 @@
   let toastTimer = 0;
   let keyboardTarget = true;
 
+  // Escala el layout 1280×800 para llenar la pantalla táctil real
+  function fitKioskToScreen() {
+    const root = document.getElementById("scale-root");
+    const kiosk = document.getElementById("kiosk");
+    if (!root || !kiosk) return;
+    const sw = window.innerWidth || 1280;
+    const sh = window.innerHeight || 800;
+    const scale = Math.min(sw / 1280, sh / 800);
+    const ox = Math.max(0, (sw - 1280 * scale) / 2);
+    const oy = Math.max(0, (sh - 800 * scale) / 2);
+    kiosk.style.transformOrigin = "top left";
+    kiosk.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
+  }
+
+  document.body.classList.add("lite");
+  fitKioskToScreen();
+  window.addEventListener("resize", fitKioskToScreen);
+  window.addEventListener("orientationchange", fitKioskToScreen);
+
   // ---------------------------------------------------------------------------
   // Bloqueo kiosk
   // ---------------------------------------------------------------------------

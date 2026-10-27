@@ -21,8 +21,9 @@ TimeoutStartSec=120
 
 Environment=PYTHONUNBUFFERED=1
 Environment=MPV_HOME=/home/saskweise/.config/mpv
-# Vídeo fullscreen en la tele (HDMI). Ajusta 0/1 según xrandr / wlr-randr
+# Valores por defecto; se sobrescriben con rockola.env (configure-displays.sh)
 Environment=ROCKOLA_MPV_FS_SCREEN=1
+EnvironmentFile=-/home/saskweise/Rockola-Raspberry/rockola.env
 
 SupplementaryGroups=gpio video audio render
 

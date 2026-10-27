@@ -32,8 +32,8 @@
 html,
 body {
   margin: 0;
-  width: 1280px;
-  height: 800px;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: var(--bg-0);
   color: var(--text);
@@ -44,6 +44,13 @@ body {
   -webkit-user-drag: none;
   touch-action: manipulation;
   cursor: default;
+}
+
+#scale-root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
 }
 
 body {
@@ -572,4 +579,32 @@ input {
 
 .toast.error {
   border-color: #ff4d6d;
+}
+
+/* Pi / lite: menos animaciones = más fluido en la táctil */
+body.lite,
+body.lite .brand-name,
+body.lite .credits-value,
+body.lite .credits-pill,
+body.lite .search-input,
+body.lite .btn-hot,
+body.lite .kb-key,
+body.lite .toast,
+body.lite .brand-mark {
+  animation: none !important;
+}
+
+body.lite .kb-key {
+  border-color: #00e5ff;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.35), 0 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+body.lite .credits-pill {
+  border-color: #ff00e5;
+  box-shadow: 0 0 10px rgba(255, 0, 229, 0.35);
+}
+
+body.lite .brand-name {
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.55);
+  color: #b8ffff;
 }

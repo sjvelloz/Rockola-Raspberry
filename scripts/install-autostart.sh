@@ -68,13 +68,21 @@ if [ -f "$HOME_DIR/.config/wayfire.ini" ]; then
   echo "==> Detectado wayfire.ini (revisa [autostart] manualmente si hace falta)"
 fi
 
+# --- Pantallas (HDMI = vídeo) ---
+echo "==> Configurando pantallas (tele HDMI)…"
+chmod +x "$ROOT/scripts/configure-displays.sh" || true
+if bash "$ROOT/scripts/configure-displays.sh"; then
+  sudo systemctl restart jukebox.service || true
+fi
+
 echo
 echo "Listo. Comprueba:"
 echo "  curl -s http://127.0.0.1:8000/api/credits"
 echo "  systemctl is-enabled jukebox.service"
+echo "  cat $ROOT/rockola.env"
 echo
 echo "Para ver el kiosk ahora (sin reiniciar):"
 echo "  $ROOT/scripts/start-kiosk.sh"
 echo
 echo "Luego: sudo reboot"
-echo "En Raspberry Pi Configuration → System → Boot: Desktop + autologin ($USER_NAME)"
+echo "Boot: Desktop + autologin ($USER_NAME)"

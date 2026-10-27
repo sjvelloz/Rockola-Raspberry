@@ -103,6 +103,38 @@ def _find_ytdlp() -> str | None:
     return shutil.which("yt-dlp")
 
 
+def _guess_hdmi_screen_index() -> str:
+    """
+    Elige el índice de pantalla HDMI para mpv (tele).
+    Si hay 2+ monitores, suele ser el último; si no, 0.
+    """
+    try:
+        # wlr-randr: nombres en la 1ª columna de líneas no indentadas
+        proc = subprocess.run(
+            ["wlr-randr"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            names = [
+                ln.split()[0]
+                for ln in proc.stdout.splitlines()
+                if ln.strip() and not ln.startswith(" ") and not ln.startswith("\t")
+            ]
+            for idx, name in enumerate(names):
+                up = name.upper()
+                if "HDMI" in up or up.startswith("DP-"):
+                    logger.info("Pantalla HDMI detectada: %s (índice %s)", name, idx)
+                    return str(idx)
+            if len(names) >= 2:
+                return str(len(names) - 1)
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return "1"  # valor habitual con DSI=0 + HDMI=1
+
+
 class PlayerEngine:
     """Gestiona cola, estados IDLE / TRANSITION / PLAYING e integración con mpv."""
 
@@ -142,10 +174,12 @@ class PlayerEngine:
         env_windowed = os.environ.get("ROCKOLA_WINDOWED", "").strip() in {"1", "true", "yes"}
         env_fs = os.environ.get("ROCKOLA_FULLSCREEN", "").strip() in {"1", "true", "yes"}
         self._windowed = env_windowed or (platform.system() == "Windows" and not env_fs)
-        # Pantalla de vídeo (tele por HDMI). Ej: ROCKOLA_MPV_FS_SCREEN=1
+        # Pantalla de vídeo (tele / HDMI). Ver scripts/configure-displays.sh
         self._fs_screen = os.environ.get("ROCKOLA_MPV_FS_SCREEN", "").strip()
         self._drm_connector = os.environ.get("ROCKOLA_MPV_DRM_CONNECTOR", "").strip()
         self._log_dir = ROOT_DIR / "logs"
+        if not self._fs_screen and not self._windowed:
+            self._fs_screen = self._guess_hdmi_screen_index()
 
     # ------------------------------------------------------------------
     # Ciclo de vida
@@ -458,11 +492,17 @@ class PlayerEngine:
             else:
                 cmd.append("--fullscreen")
                 cmd.append("--hwdec=auto-safe")
-                if self._fs_screen:
+                # Forzar salida a la tele (índice de pantalla / conector DRM)
+                if self._fs_screen != "":
                     cmd.append(f"--fs-screen={self._fs_screen}")
                     cmd.append(f"--screen={self._fs_screen}")
                 if self._drm_connector:
                     cmd.append(f"--drm-connector={self._drm_connector}")
+                logger.info(
+                    "mpv vídeo → fs-screen=%r drm=%r",
+                    self._fs_screen or None,
+                    self._drm_connector or None,
+                )
         else:
             # Ambiente: solo audio (no tapa la UI / tele de cola)
             cmd.append("--no-video")
