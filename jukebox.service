@@ -10,7 +10,7 @@ User=saskweise
 Group=saskweise
 WorkingDirectory=/home/saskweise/Rockola-Raspberry
 
-# Actualiza yt-dlp en cada arranque (sin --quiet; el script ya es resiliente)
+# Actualiza yt-dlp en cada arranque
 ExecStartPre=/home/saskweise/Rockola-Raspberry/venv/bin/python /home/saskweise/Rockola-Raspberry/maintenance.py
 
 ExecStart=/home/saskweise/Rockola-Raspberry/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
@@ -21,7 +21,11 @@ TimeoutStartSec=120
 
 Environment=PYTHONUNBUFFERED=1
 Environment=MPV_HOME=/home/saskweise/.config/mpv
-# Valores por defecto; se sobrescriben con rockola.env (configure-displays.sh)
+# Crítico: audio de PipeWire/Pulse del usuario gráfico (si no → silencio y mpv corta)
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=PULSE_RUNTIME_PATH=/run/user/%U/pulse
+Environment=PIPEWIRE_RUNTIME_DIR=/run/user/%U
+# Valores por defecto; rockola.env puede sobrescribir pantalla HDMI
 Environment=ROCKOLA_MPV_FS_SCREEN=1
 EnvironmentFile=-/home/saskweise/Rockola-Raspberry/rockola.env
 

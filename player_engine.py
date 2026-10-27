@@ -177,9 +177,12 @@ class PlayerEngine:
         # Pantalla de vídeo (tele / HDMI). Ver scripts/configure-displays.sh
         self._fs_screen = os.environ.get("ROCKOLA_MPV_FS_SCREEN", "").strip()
         self._drm_connector = os.environ.get("ROCKOLA_MPV_DRM_CONNECTOR", "").strip()
+        # Audio: pipewire/pulse/alsa. Ej: ROCKOLA_AO=alsa  o  ROCKOLA_AUDIO_DEVICE=...
+        self._ao = os.environ.get("ROCKOLA_AO", "pipewire,pulse,alsa").strip()
+        self._audio_device = os.environ.get("ROCKOLA_AUDIO_DEVICE", "").strip()
+        # hwdec en Pi a veces rompe A/V; off por defecto, activar con ROCKOLA_HWDEC=auto-safe
+        self._hwdec = os.environ.get("ROCKOLA_HWDEC", "no").strip() or "no"
         self._log_dir = ROOT_DIR / "logs"
-        if not self._fs_screen and not self._windowed:
-            self._fs_screen = self._guess_hdmi_screen_index()
 
     # ------------------------------------------------------------------
     # Ciclo de vida
@@ -340,7 +343,7 @@ class PlayerEngine:
 
             logger.info("IDLE ambiente: %s", media)
             self._set_current(None)
-            self._run_mpv(
+            ok = self._run_mpv(
                 [media],
                 volume=AMBIENT_VOLUME,
                 user_track=False,
@@ -348,6 +351,10 @@ class PlayerEngine:
             )
             if not self.cola_canciones.empty() or self._stop_event.is_set():
                 break
+            if not ok:
+                # Pista mala / sin audio: esperar un poco e intentar otra
+                logger.warning("Ambiente falló; reintentando otra pista…")
+                self._stop_event.wait(timeout=2.0)
 
     def _ensure_ambient_playlist(self) -> None:
         if self._ambient_playlist_loaded:
@@ -455,10 +462,13 @@ class PlayerEngine:
             self._mpv_bin,
             "--no-terminal",
             f"--volume={volume}",
-            # shinchiro/mpv reciente: --no-osd ya no existe
             "--osd-level=0",
             f"--log-file={log_file}",
+            # Cadena de backends de audio (PipeWire de la sesión gráfica)
+            f"--ao={self._ao}",
         ]
+        if self._audio_device:
+            cmd.append(f"--audio-device={self._audio_device}")
 
         is_youtube = any("youtube.com" in m or "youtu.be" in m for m in media)
         if is_youtube:
@@ -466,10 +476,12 @@ class PlayerEngine:
             if self._ytdlp_bin:
                 ytdlp = self._ytdlp_bin.replace("\\", "/")
                 cmd.append(f"--script-opts=ytdl_hook-ytdl_path={ytdlp}")
+            if not user_track:
+                # Ambiente: solo pista de audio (más estable/rápido)
+                cmd.append("--ytdl-format=bestaudio/best")
 
         if user_track:
             cmd.append("--length=600")
-            # Kiosk: solo reproducir (sin seek, menús, teclado ni ratón)
             cmd.extend(
                 [
                     "--osc=no",
@@ -491,21 +503,24 @@ class PlayerEngine:
                 )
             else:
                 cmd.append("--fullscreen")
-                cmd.append("--hwdec=auto-safe")
-                # Forzar salida a la tele (índice de pantalla / conector DRM)
+                if self._hwdec and self._hwdec.lower() not in {"no", "none", "off", "0"}:
+                    cmd.append(f"--hwdec={self._hwdec}")
+                # Solo forzar pantalla si está definida (evitar índice inválido → corte a los pocos s)
                 if self._fs_screen != "":
                     cmd.append(f"--fs-screen={self._fs_screen}")
                     cmd.append(f"--screen={self._fs_screen}")
                 if self._drm_connector:
                     cmd.append(f"--drm-connector={self._drm_connector}")
                 logger.info(
-                    "mpv vídeo → fs-screen=%r drm=%r",
+                    "mpv vídeo → fs-screen=%r ao=%r device=%r hwdec=%r",
                     self._fs_screen or None,
-                    self._drm_connector or None,
+                    self._ao,
+                    self._audio_device or "default",
+                    self._hwdec,
                 )
         else:
-            # Ambiente: solo audio (no tapa la UI / tele de cola)
             cmd.append("--no-video")
+            cmd.append("--force-window=no")
 
         cmd.extend(media)
         return cmd
@@ -572,10 +587,14 @@ class PlayerEngine:
 
             elapsed = time.monotonic() - started
             code = proc.returncode
-            # yt-dlp tarda ~3-5 s: solo es fallo si muere muy pronto
-            if user_track and code not in (0, None) and elapsed < 8.0:
+            # En la Pi yt-dlp puede tardar 10–15 s; solo fallo si muere muy pronto
+            if user_track and code not in (0, None) and elapsed < 20.0:
                 self._log_mpv_tail()
                 logger.error("mpv salió en %.1fs con código %s", elapsed, code)
+                return False
+            if not user_track and code not in (0, None) and elapsed < 12.0:
+                self._log_mpv_tail()
+                logger.warning("mpv ambiente salió en %.1fs code=%s", elapsed, code)
                 return False
             logger.info("mpv (%s) terminó code=%s elapsed=%.1fs", role, code, elapsed)
             return True

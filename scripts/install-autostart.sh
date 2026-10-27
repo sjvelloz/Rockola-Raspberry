@@ -14,6 +14,10 @@ echo "==> Usuario:  $USER_NAME"
 
 chmod +x "$ROOT/scripts/start-kiosk.sh" "$ROOT/scripts/install-autostart.sh"
 
+# PipeWire/Pulse del usuario disponible para el servicio de sistema
+echo "==> Habilitando linger de sesión (audio para jukebox.service)…"
+sudo loginctl enable-linger "$USER_NAME" 2>/dev/null || true
+
 # --- Backend systemd ---
 echo "==> Instalando jukebox.service…"
 # Asegurar rutas del usuario actual en el unit
