@@ -118,6 +118,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Devuelve el código de error de yt-dlp (por defecto siempre 0).",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Compatibilidad con unidades systemd antiguas (no-op).",
+    )
     args = parser.parse_args(argv)
 
     _setup_logging(verbose=args.verbose)

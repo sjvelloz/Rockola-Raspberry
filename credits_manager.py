@@ -6,6 +6,9 @@ Pines BCM (botón/opto a GND, pull-up interno, debounce):
   27  +1 crédito (personal / compensación de ficha)
   22  saltar canción actual
   23  reiniciar la Pi (mantener pulsado REBOOT_HOLD_SECONDS)
+
+En Raspberry Pi OS Bookworm, RPi.GPIO.add_event_detect suele fallar
+("Failed to add edge detection"). Usamos sondeo (polling), más fiable.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from config import (
 logger = logging.getLogger(__name__)
 
 DEBOUNCE_MS = 50
+POLL_INTERVAL_S = 0.02  # 20 ms
 
 try:
     import RPi.GPIO as GPIO  # type: ignore
@@ -73,8 +77,10 @@ class CreditsManager:
         self._last_credit_ts = 0.0
         self._last_skip_ts = 0.0
         self._started = False
-        self._reboot_watch: threading.Thread | None = None
-        self._reboot_cancel = threading.Event()
+        self._stop_poll = threading.Event()
+        self._poll_thread: threading.Thread | None = None
+        self._prev_levels: dict[int, int] = {}
+        self._reboot_low_since: float | None = None
 
     def start(self) -> None:
         if self._started:
@@ -85,34 +91,31 @@ class CreditsManager:
             self._started = True
             return
 
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
+        try:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setwarnings(False)
+            for pin in (self.coin_pin, self.credit_pin, self.skip_pin, self.reboot_pin):
+                GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+                self._prev_levels[pin] = GPIO.input(pin)
+        except Exception:
+            logger.exception(
+                "No se pudo inicializar GPIO. El servidor arranca sin botones/monedero."
+            )
+            self._started = True
+            return
 
-        for pin in (self.coin_pin, self.credit_pin, self.skip_pin, self.reboot_pin):
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-        GPIO.add_event_detect(
-            self.coin_pin, GPIO.FALLING, callback=self._on_coin, bouncetime=self.debounce_ms
+        # Bookworm: add_event_detect suele fallar → polling
+        self._stop_poll.clear()
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop,
+            name="gpio-poll",
+            daemon=True,
         )
-        GPIO.add_event_detect(
-            self.credit_pin,
-            GPIO.FALLING,
-            callback=self._on_credit,
-            bouncetime=self.debounce_ms,
-        )
-        GPIO.add_event_detect(
-            self.skip_pin, GPIO.FALLING, callback=self._on_skip, bouncetime=max(self.debounce_ms, 200)
-        )
-        GPIO.add_event_detect(
-            self.reboot_pin,
-            GPIO.FALLING,
-            callback=self._on_reboot_press,
-            bouncetime=self.debounce_ms,
-        )
+        self._poll_thread.start()
 
         self._started = True
         logger.info(
-            "GPIO activo: coin=%d credit=%d skip=%d reboot=%d (hold=%.1fs)",
+            "GPIO por sondeo: coin=%d credit=%d skip=%d reboot=%d (hold=%.1fs)",
             self.coin_pin,
             self.credit_pin,
             self.skip_pin,
@@ -123,21 +126,68 @@ class CreditsManager:
     def stop(self) -> None:
         if not self._started:
             return
-        self._reboot_cancel.set()
+        self._stop_poll.set()
+        if self._poll_thread and self._poll_thread.is_alive():
+            self._poll_thread.join(timeout=2)
         if GPIO_AVAILABLE:
-            pins = [self.coin_pin, self.credit_pin, self.skip_pin, self.reboot_pin]
-            for pin in pins:
-                try:
-                    GPIO.remove_event_detect(pin)
-                except RuntimeError:
-                    pass
-            GPIO.cleanup(pins)
+            try:
+                GPIO.cleanup(
+                    [self.coin_pin, self.credit_pin, self.skip_pin, self.reboot_pin]
+                )
+            except Exception:
+                logger.exception("Error en GPIO.cleanup")
         self._started = False
         logger.info("GPIO detenido.")
 
     # ------------------------------------------------------------------
-    # Callbacks
+    # Polling (flanco de bajada = HIGH→LOW)
     # ------------------------------------------------------------------
+
+    def _poll_loop(self) -> None:
+        assert GPIO is not None
+        while not self._stop_poll.is_set():
+            try:
+                self._poll_once()
+            except Exception:
+                logger.exception("Error en sondeo GPIO")
+            time.sleep(POLL_INTERVAL_S)
+
+    def _poll_once(self) -> None:
+        assert GPIO is not None
+        now = time.monotonic()
+
+        for pin, handler in (
+            (self.coin_pin, self._fire_coin),
+            (self.credit_pin, self._fire_credit),
+            (self.skip_pin, self._fire_skip),
+        ):
+            level = GPIO.input(pin)
+            prev = self._prev_levels.get(pin, GPIO.HIGH)
+            if prev == GPIO.HIGH and level == GPIO.LOW:
+                handler()
+            self._prev_levels[pin] = level
+
+        # Reboot: mantener LOW durante reboot_hold_seconds
+        reboot_level = GPIO.input(self.reboot_pin)
+        if reboot_level == GPIO.LOW:
+            if self._reboot_low_since is None:
+                self._reboot_low_since = now
+                logger.info(
+                    "Botón reboot pulsado: mantén %.1fs…",
+                    self.reboot_hold_seconds,
+                )
+            elif now - self._reboot_low_since >= self.reboot_hold_seconds:
+                self._reboot_low_since = None  # evitar repetición
+                logger.warning("Reiniciando Raspberry Pi…")
+                try:
+                    self.on_reboot()
+                except Exception:
+                    logger.exception("Error en on_reboot")
+        else:
+            if self._reboot_low_since is not None:
+                logger.info("Reboot cancelado (soltó el botón).")
+            self._reboot_low_since = None
+        self._prev_levels[self.reboot_pin] = reboot_level
 
     def _debounce_ok(self, attr: str, min_ms: float | None = None) -> bool:
         need = self.debounce_ms if min_ms is None else min_ms
@@ -149,63 +199,27 @@ class CreditsManager:
             setattr(self, attr, now)
             return True
 
-    def _on_coin(self, channel: int) -> None:
-        if channel != self.coin_pin or not self._debounce_ok("_last_coin_ts"):
+    def _fire_coin(self) -> None:
+        if not self._debounce_ok("_last_coin_ts"):
             return
+        logger.debug("Pulso monedero (GPIO %d)", self.coin_pin)
         self.add_credit(1)
 
-    def _on_credit(self, channel: int) -> None:
-        if channel != self.credit_pin or not self._debounce_ok("_last_credit_ts", 300):
+    def _fire_credit(self) -> None:
+        if not self._debounce_ok("_last_credit_ts", 300):
             return
-        logger.info("Botón crédito (GPIO %d): +1", channel)
+        logger.info("Botón crédito (GPIO %d): +1", self.credit_pin)
         self.add_credit(1)
 
-    def _on_skip(self, channel: int) -> None:
-        if channel != self.skip_pin or not self._debounce_ok("_last_skip_ts", 400):
+    def _fire_skip(self) -> None:
+        if not self._debounce_ok("_last_skip_ts", 400):
             return
-        logger.info("Botón skip (GPIO %d)", channel)
+        logger.info("Botón skip (GPIO %d)", self.skip_pin)
         if self.on_skip:
             try:
                 self.on_skip()
             except Exception:
                 logger.exception("Error en on_skip")
-
-    def _on_reboot_press(self, channel: int) -> None:
-        if channel != self.reboot_pin:
-            return
-        if self._reboot_watch and self._reboot_watch.is_alive():
-            return
-        self._reboot_cancel.clear()
-        self._reboot_watch = threading.Thread(
-            target=self._watch_reboot_hold,
-            name="reboot-hold",
-            daemon=True,
-        )
-        self._reboot_watch.start()
-
-    def _watch_reboot_hold(self) -> None:
-        """Reinicio solo si se mantiene pulsado el tiempo configurado."""
-        if not GPIO_AVAILABLE:
-            return
-        logger.info(
-            "Botón reboot: mantén %.1fs para reiniciar…",
-            self.reboot_hold_seconds,
-        )
-        deadline = time.monotonic() + self.reboot_hold_seconds
-        while time.monotonic() < deadline:
-            if self._reboot_cancel.is_set():
-                return
-            if GPIO.input(self.reboot_pin) != GPIO.LOW:
-                logger.info("Reboot cancelado (soltó el botón).")
-                return
-            time.sleep(0.05)
-
-        if GPIO.input(self.reboot_pin) == GPIO.LOW:
-            logger.warning("Reiniciando Raspberry Pi…")
-            try:
-                self.on_reboot()
-            except Exception:
-                logger.exception("Error en on_reboot")
 
     @staticmethod
     def _default_reboot() -> None:

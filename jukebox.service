@@ -1,38 +1,31 @@
 [Unit]
 Description=Rockola Jukebox (FastAPI + mpv)
-Documentation=file:///home/pi/Rockola-Raspberry/KIOSK.md
+Documentation=file:///home/saskweise/Rockola-Raspberry/INSTALACION_PI.md
 After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/Rockola-Raspberry
+User=saskweise
+Group=saskweise
+WorkingDirectory=/home/saskweise/Rockola-Raspberry
 
-# Actualiza yt-dlp en cada arranque del servicio (no bloquea si falla la red)
-ExecStartPre=/home/pi/Rockola-Raspberry/venv/bin/python /home/pi/Rockola-Raspberry/maintenance.py
+# Actualiza yt-dlp en cada arranque (sin --quiet raro; el script ya es resiliente)
+ExecStartPre=/home/saskweise/Rockola-Raspberry/venv/bin/python /home/saskweise/Rockola-Raspberry/maintenance.py
 
-# API + WebSockets + UI estática
-ExecStart=/home/pi/Rockola-Raspberry/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+ExecStart=/home/saskweise/Rockola-Raspberry/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 
 Restart=always
 RestartSec=5
 TimeoutStartSec=120
 
-# GPIO / audio / pantalla
 Environment=PYTHONUNBUFFERED=1
-Environment=MPV_HOME=/home/pi/.config/mpv
-# Vídeo a pantalla completa en la tele (HDMI). La UI kiosk va en la DSI táctil.
-# Ajusta el índice tras mirar `xrandr` / `wlr-randr` (0=primera, 1=segunda…).
+Environment=MPV_HOME=/home/saskweise/.config/mpv
+# Vídeo fullscreen en la tele (HDMI). Ajusta 0/1 según xrandr / wlr-randr
 Environment=ROCKOLA_MPV_FS_SCREEN=1
-# Si usas vo=drm puro, descomenta y pon el conector real (kmsprint):
-# Environment=ROCKOLA_MPV_DRM_CONNECTOR=HDMI-A-1
 
-# En Raspberry Pi 4, el usuario necesita acceso a GPIO (grupo gpio) y vídeo
 SupplementaryGroups=gpio video audio render
 
-# Logs en journalctl -u jukebox.service
 StandardOutput=journal
 StandardError=journal
 
