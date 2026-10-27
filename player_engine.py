@@ -30,7 +30,12 @@ import random
 
 from config import AMBIENT_DIR, AMBIENT_VOLUME, get_ambient_playlist_url
 from database import registrar_reproduccion
-from youtube_service import MAX_DURATION_SECONDS, get_stream_url, list_playlist_video_ids
+from youtube_service import (
+    MAX_DURATION_SECONDS,
+    PlaybackError,
+    extract_playback,
+    list_playlist_video_ids,
+)
 
 if TYPE_CHECKING:
     from credits_manager import CreditsManager
@@ -167,6 +172,7 @@ class PlayerEngine:
         self._mpv_lock = threading.Lock()
         self._ambient_index = 0
         self._ambient_playlist_ids: list[str] = []
+        self._ambient_blocked: set[str] = set()
         self._ambient_playlist_loaded = False
         self._mpv_bin = _find_mpv()
         self._ytdlp_bin = _find_ytdlp()
@@ -329,33 +335,6 @@ class PlayerEngine:
                 self._set_current(item)
                 self._play_user_track(item)
 
-    def _play_ambient(self) -> None:
-        """
-        Música de ambiente mientras la cola de usuarios esté vacía.
-        Prioridad: playlist YouTube (aleatoria) → MP3 locales → espera.
-        Al terminar lo que puso la gente, el bucle vuelve aquí solo.
-        """
-        while not self._stop_event.is_set() and self.cola_canciones.empty():
-            media = self._next_ambient_media()
-            if not media:
-                self._wait_while_idle()
-                return
-
-            logger.info("IDLE ambiente: %s", media)
-            self._set_current(None)
-            ok = self._run_mpv(
-                [media],
-                volume=AMBIENT_VOLUME,
-                user_track=False,
-                interruptible=True,
-            )
-            if not self.cola_canciones.empty() or self._stop_event.is_set():
-                break
-            if not ok:
-                # Pista mala / sin audio: esperar un poco e intentar otra
-                logger.warning("Ambiente falló; reintentando otra pista…")
-                self._stop_event.wait(timeout=2.0)
-
     def _ensure_ambient_playlist(self) -> None:
         if self._ambient_playlist_loaded:
             return
@@ -371,19 +350,18 @@ class PlayerEngine:
         self._ambient_playlist_ids = list_playlist_video_ids(url)
         logger.info("Playlist ambiente: %d temas", len(self._ambient_playlist_ids))
 
-    def _next_ambient_media(self) -> str | None:
-        """Devuelve URL de YouTube aleatoria o ruta a un MP3 local."""
+    def _next_ambient_video_id(self) -> str | None:
         self._ensure_ambient_playlist()
-        if self._ambient_playlist_ids:
-            vid = random.choice(self._ambient_playlist_ids)
-            return f"https://www.youtube.com/watch?v={vid}"
-
-        tracks = self._list_ambient_tracks()
-        if not tracks:
+        candidates = [
+            v for v in self._ambient_playlist_ids if v not in self._ambient_blocked
+        ]
+        if not candidates:
+            # Si todos fallaron, reintentar la lista completa más tarde
+            self._ambient_blocked.clear()
+            candidates = list(self._ambient_playlist_ids)
+        if not candidates:
             return None
-        path = tracks[self._ambient_index % len(tracks)]
-        self._ambient_index += 1
-        return str(path)
+        return random.choice(candidates)
 
     def _wait_while_idle(self) -> None:
         while not self._stop_event.is_set() and self.cola_canciones.empty():
@@ -392,16 +370,66 @@ class PlayerEngine:
                 if not self.cola_canciones.empty():
                     break
 
+    def _play_ambient(self) -> None:
+        """
+        Música de ambiente mientras la cola de usuarios esté vacía.
+        Prioridad: playlist YouTube (aleatoria, saltando bloqueados) → MP3 → espera.
+        """
+        while not self._stop_event.is_set() and self.cola_canciones.empty():
+            # 1) Playlist YouTube vía yt-dlp del venv → URL directa a mpv
+            vid = self._next_ambient_video_id()
+            if vid:
+                logger.info("IDLE ambiente YouTube: %s", vid)
+                self._set_current(None)
+                try:
+                    media = extract_playback(vid, audio_only=True)
+                except PlaybackError as exc:
+                    logger.warning("Ambiente bloqueado/omitido %s: %s", vid, exc)
+                    self._ambient_blocked.add(vid)
+                    continue
+
+                ok = self._run_extracted(
+                    media,
+                    volume=AMBIENT_VOLUME,
+                    user_track=False,
+                    interruptible=True,
+                )
+                if not self.cola_canciones.empty() or self._stop_event.is_set():
+                    break
+                if not ok:
+                    self._ambient_blocked.add(vid)
+                    logger.warning("Ambiente falló al reproducir %s; otra pista…", vid)
+                    self._stop_event.wait(timeout=1.0)
+                continue
+
+
+            # 2) MP3 locales
+            tracks = self._list_ambient_tracks()
+            if tracks:
+                path = tracks[self._ambient_index % len(tracks)]
+                self._ambient_index += 1
+                logger.info("IDLE ambiente local: %s", path.name)
+                self._run_mpv(
+                    [str(path)],
+                    volume=AMBIENT_VOLUME,
+                    user_track=False,
+                    interruptible=True,
+                )
+                if not self.cola_canciones.empty() or self._stop_event.is_set():
+                    break
+                continue
+
+            self._wait_while_idle()
+            return
+
     def _play_user_track(self, item: QueueItem) -> None:
-        """Reproduce el vídeo con mpv (YouTube vía yt-dlp). Reembolsa si falla."""
+        """Extrae stream con yt-dlp del venv y lo pasa a mpv (con headers)."""
         logger.info("PLAYING: %s (%s)", item.titulo, item.id_youtube)
         self.last_error = None
 
         if not self._mpv_bin:
             self._fail_play("mpv no instalado — no se puede reproducir.", refund=True)
             return
-
-        youtube_url = f"https://www.youtube.com/watch?v={item.id_youtube}"
 
         try:
             registrar_reproduccion(
@@ -412,31 +440,48 @@ class PlayerEngine:
         except Exception:
             logger.exception("Error registrando reproducción de %s", item.id_youtube)
 
-        # 1) Preferir URL de YouTube: mpv + yt-dlp (vídeo + audio estables)
-        ok = self._run_mpv(
-            [youtube_url],
+        try:
+            media = extract_playback(item.id_youtube, audio_only=False)
+        except PlaybackError as exc:
+            self._fail_play(
+                f"No se pudo obtener el vídeo ({exc}). Prueba otra canción.",
+                refund=True,
+            )
+            return
+
+        ok = self._run_extracted(
+            media,
             volume=USER_VOLUME,
             user_track=True,
             interruptible=False,
         )
 
-        # 2) Fallback: stream URL directa de yt-dlp
-        if not ok and not self._stop_event.is_set():
-            logger.warning("mpv/ytdl falló; intentando stream directo…")
-            stream_url = get_stream_url(item.id_youtube)
-            if stream_url:
-                ok = self._run_mpv(
-                    [stream_url],
-                    volume=USER_VOLUME,
-                    user_track=True,
-                    interruptible=False,
-                )
-
         if not ok and not self._stop_event.is_set():
             self._fail_play(
-                "No se pudo reproducir el vídeo. Revisa mpv/yt-dlp y la red.",
+                "No se pudo reproducir el vídeo. Revisa audio/mpv y la red.",
                 refund=True,
             )
+
+    def _run_extracted(
+        self,
+        media: dict[str, Any],
+        *,
+        volume: int,
+        user_track: bool,
+        interruptible: bool,
+    ) -> bool:
+        """Reproduce URL(s) ya extraídas por yt-dlp (+ headers / audio DASH)."""
+        urls = [media["url"]]
+        audio_url = media.get("audio_url")
+        headers = media.get("headers") or {}
+        return self._run_mpv(
+            urls,
+            volume=volume,
+            user_track=user_track,
+            interruptible=interruptible,
+            http_headers=headers,
+            audio_file=audio_url,
+        )
 
     def _fail_play(self, message: str, *, refund: bool) -> None:
         logger.error(message)
@@ -453,7 +498,15 @@ class PlayerEngine:
     # mpv
     # ------------------------------------------------------------------
 
-    def _mpv_cmd(self, media: list[str], *, volume: int, user_track: bool) -> list[str]:
+    def _mpv_cmd(
+        self,
+        media: list[str],
+        *,
+        volume: int,
+        user_track: bool,
+        http_headers: dict[str, str] | None = None,
+        audio_file: str | None = None,
+    ) -> list[str]:
         assert self._mpv_bin
         self._log_dir.mkdir(parents=True, exist_ok=True)
         log_file = self._log_dir / ("mpv-user.log" if user_track else "mpv-ambient.log")
@@ -470,15 +523,38 @@ class PlayerEngine:
         if self._audio_device:
             cmd.append(f"--audio-device={self._audio_device}")
 
-        is_youtube = any("youtube.com" in m or "youtu.be" in m for m in media)
-        if is_youtube:
+        # Streams ya extraídos por yt-dlp del venv: no usar ytdl_hook de mpv
+        is_watch_url = any(
+            ("youtube.com/watch" in m or "youtu.be/" in m) for m in media
+        )
+        if is_watch_url:
             cmd.append("--ytdl=yes")
             if self._ytdlp_bin:
                 ytdlp = self._ytdlp_bin.replace("\\", "/")
                 cmd.append(f"--script-opts=ytdl_hook-ytdl_path={ytdlp}")
             if not user_track:
-                # Ambiente: solo pista de audio (más estable/rápido)
                 cmd.append("--ytdl-format=bestaudio/best")
+        else:
+            cmd.append("--ytdl=no")
+            if audio_file:
+                cmd.append(f"--audio-file={audio_file}")
+            if http_headers:
+                # Preferir cabeceras que YouTube exige en googlevideo
+                prefer = ("User-Agent", "Referer", "Cookie", "Origin")
+                ordered: list[tuple[str, str]] = []
+                seen: set[str] = set()
+                for key in prefer:
+                    for k, v in http_headers.items():
+                        if k.lower() == key.lower() and v and k not in seen:
+                            ordered.append((k, str(v)))
+                            seen.add(k)
+                for k, v in http_headers.items():
+                    if k not in seen and v:
+                        ordered.append((k, str(v)))
+                        seen.add(k)
+                fields = [f"{k}: {v}" for k, v in ordered if "," not in str(v)]
+                if fields:
+                    cmd.append("--http-header-fields=" + ",".join(fields))
 
         if user_track:
             cmd.append("--length=600")
@@ -532,13 +608,26 @@ class PlayerEngine:
         volume: int,
         user_track: bool,
         interruptible: bool,
+        http_headers: dict[str, str] | None = None,
+        audio_file: str | None = None,
     ) -> bool:
         if not self._mpv_bin:
             return False
 
         role = "user" if user_track else "ambient"
-        cmd = self._mpv_cmd(media, volume=volume, user_track=user_track)
-        logger.info("Lanzando mpv (%s): %s", role, " ".join(cmd))
+        cmd = self._mpv_cmd(
+            media,
+            volume=volume,
+            user_track=user_track,
+            http_headers=http_headers,
+            audio_file=audio_file,
+        )
+        # No loguear URLs firmadas enteras (muy largas / sensibles)
+        safe_cmd = [
+            c if not (c.startswith("http") and len(c) > 80) else c[:60] + "…"
+            for c in cmd
+        ]
+        logger.info("Lanzando mpv (%s): %s", role, " ".join(safe_cmd))
 
         env = os.environ.copy()
         scripts_dir = str(Path(sys.executable).resolve().parent)

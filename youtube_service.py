@@ -42,7 +42,17 @@ _YDL_STREAM_OPTS: dict[str, Any] = {
     "skip_download": True,
     "noplaylist": True,
     "socket_timeout": 20,
-    "format": "bv*[height<=1080]+ba/b[height<=1080]/best",
+    # Un solo contenedor cuando sea posible (más fácil para mpv)
+    "format": "best[height<=1080][ext=mp4]/best[height<=1080]/best",
+}
+
+_YDL_AUDIO_OPTS: dict[str, Any] = {
+    "quiet": True,
+    "no_warnings": True,
+    "skip_download": True,
+    "noplaylist": True,
+    "socket_timeout": 20,
+    "format": "bestaudio/best",
 }
 
 _cache_lock = threading.Lock()
@@ -238,31 +248,106 @@ def list_playlist_video_ids(playlist_url: str, limit: int = 100) -> list[str]:
     return ids
 
 
-def get_stream_url(video_id: str) -> str | None:
-    """URL de stream para mpv."""
+class PlaybackError(Exception):
+    """No se pudo obtener un stream reproducible (bloqueo, red, etc.)."""
+
+
+def extract_playback(
+    video_id: str,
+    *,
+    audio_only: bool = False,
+) -> dict[str, Any]:
+    """
+    Extrae stream con el yt-dlp del venv (no el de /usr/bin).
+
+    Devuelve: {url, audio_url?, headers, title, duration}
+    Si YouTube solo ofrece DASH, audio_url va aparte para --audio-file de mpv.
+    """
     video_id = (video_id or "").strip()
     if not video_id:
-        return None
+        raise PlaybackError("id vacío")
 
-    url = f"https://www.youtube.com/watch?v={video_id}"
+    page = f"https://www.youtube.com/watch?v={video_id}"
+    opts = dict(_YDL_AUDIO_OPTS if audio_only else _YDL_STREAM_OPTS)
     try:
-        with YoutubeDL(_YDL_STREAM_OPTS) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except Exception:
-        logger.exception("Error extrayendo stream de %s", video_id)
-        return None
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(page, download=False)
+    except Exception as exc:
+        msg = str(exc)
+        logger.warning("yt-dlp falló para %s: %s", video_id, msg)
+        raise PlaybackError(msg) from exc
 
     if not info:
-        return None
+        raise PlaybackError("sin metadatos")
+
+    headers = dict(info.get("http_headers") or {})
+    title = info.get("title") or video_id
+    duration = info.get("duration")
+
+    # Formato fusionado (requested_formats) = vídeo + audio separados
+    requested = info.get("requested_formats") or []
+    if len(requested) >= 2 and not audio_only:
+        video_u = audio_u = None
+        for fmt in requested:
+            u = fmt.get("url")
+            if not u or "storyboard" in u:
+                continue
+            vcodec = fmt.get("vcodec") or "none"
+            acodec = fmt.get("acodec") or "none"
+            if vcodec != "none" and not video_u:
+                video_u = u
+            if acodec != "none" and not audio_u:
+                audio_u = u
+        if video_u and audio_u:
+            return {
+                "url": video_u,
+                "audio_url": audio_u,
+                "headers": headers,
+                "title": title,
+                "duration": duration,
+            }
 
     stream = info.get("url")
     if stream and "storyboard" not in stream:
-        return stream
+        return {
+            "url": stream,
+            "headers": headers,
+            "title": title,
+            "duration": duration,
+        }
 
+    # Fallback: escoger formato de la lista
+    stream = None
     for fmt in reversed(info.get("formats") or []):
         candidate = fmt.get("url")
         if not candidate or "storyboard" in candidate:
             continue
-        if fmt.get("vcodec") != "none" or fmt.get("acodec") != "none":
-            return candidate
-    return None
+        acodec = fmt.get("acodec") or "none"
+        vcodec = fmt.get("vcodec") or "none"
+        if audio_only:
+            if acodec != "none" and vcodec == "none":
+                stream = candidate
+                break
+        elif vcodec != "none" and acodec != "none":
+            stream = candidate
+            break
+        elif vcodec != "none" or acodec != "none":
+            stream = stream or candidate
+
+    if not stream:
+        raise PlaybackError("sin URL de stream")
+
+    return {
+        "url": stream,
+        "headers": headers,
+        "title": title,
+        "duration": duration,
+    }
+
+
+def get_stream_url(video_id: str) -> str | None:
+    """Compat: solo la URL de stream."""
+    try:
+        return extract_playback(video_id)["url"]
+    except PlaybackError:
+        return None
