@@ -6,9 +6,23 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-USER_NAME="$(whoami)"
-HOME_DIR="${HOME}"
-UID_NUM="$(id -u)"
+
+# Si se lanza con "sudo bash …", usar el usuario real (no root)
+if [ "$(id -u)" -eq 0 ]; then
+  USER_NAME="${SUDO_USER:-}"
+  if [ -z "$USER_NAME" ] || [ "$USER_NAME" = "root" ]; then
+    echo "ERROR: no ejecutes este script como root puro." >&2
+    echo "Usa: bash scripts/install-autostart.sh" >&2
+    echo "  (pedirá sudo solo para systemctl)" >&2
+    exit 1
+  fi
+  HOME_DIR="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+  UID_NUM="$(id -u "$USER_NAME")"
+else
+  USER_NAME="$(whoami)"
+  HOME_DIR="${HOME}"
+  UID_NUM="$(id -u)"
+fi
 
 echo "==> Proyecto: $ROOT"
 echo "==> Usuario:  $USER_NAME (uid $UID_NUM)"
