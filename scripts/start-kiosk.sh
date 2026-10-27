@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Lanza Chromium en modo kiosk contra la UI local del jukebox.
-# Usar desde autostart de escritorio (LXDE / labwc / wayfire).
+# Autostart: ~/.config/autostart/rockola-kiosk.desktop
 
 set -euo pipefail
 
 URL="${JUKEBOX_URL:-http://127.0.0.1:8000/}"
 PROFILE="${HOME}/.config/rockola-chromium"
 
-# Esperar a que el backend responda
-for _ in $(seq 1 60); do
+# Esperar a que el backend (jukebox.service) responda
+for _ in $(seq 1 90); do
   if curl -sf "$URL" >/dev/null 2>&1; then
     break
   fi
@@ -17,11 +17,22 @@ done
 
 mkdir -p "$PROFILE"
 
-# Evitar diálogos de restauración de sesión
+# Evitar diálogo "¿Restaurar páginas?"
 sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PROFILE/Default/Preferences" 2>/dev/null || true
 sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$PROFILE/Default/Preferences" 2>/dev/null || true
 
-exec chromium-browser \
+# Bookworm puede tener "chromium" o "chromium-browser"
+CHROME=""
+if command -v chromium >/dev/null 2>&1; then
+  CHROME="chromium"
+elif command -v chromium-browser >/dev/null 2>&1; then
+  CHROME="chromium-browser"
+else
+  echo "No se encontró chromium. Instala: sudo apt install -y chromium" >&2
+  exit 1
+fi
+
+exec "$CHROME" \
   --kiosk \
   --noerrdialogs \
   --disable-infobars \
