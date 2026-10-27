@@ -42,8 +42,10 @@ _YDL_STREAM_OPTS: dict[str, Any] = {
     "skip_download": True,
     "noplaylist": True,
     "socket_timeout": 20,
-    # Un solo contenedor cuando sea posible (más fácil para mpv)
-    "format": "best[height<=1080][ext=mp4]/best[height<=1080]/best",
+    # Preferir un solo archivo; si no, DASH vídeo+audio (requested_formats)
+    "format": "bv*[height<=1080]+ba/b[height<=1080]/best",
+    # Clientes modernos: evita "format is not available" en Pi
+    "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
 }
 
 _YDL_AUDIO_OPTS: dict[str, Any] = {
@@ -53,6 +55,7 @@ _YDL_AUDIO_OPTS: dict[str, Any] = {
     "noplaylist": True,
     "socket_timeout": 20,
     "format": "bestaudio/best",
+    "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
 }
 
 _cache_lock = threading.Lock()

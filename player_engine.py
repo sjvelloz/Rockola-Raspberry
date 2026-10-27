@@ -510,10 +510,15 @@ class PlayerEngine:
         assert self._mpv_bin
         self._log_dir.mkdir(parents=True, exist_ok=True)
         log_file = self._log_dir / ("mpv-user.log" if user_track else "mpv-ambient.log")
+        try:
+            log_file.write_text("", encoding="utf-8")
+        except OSError:
+            pass
 
         cmd = [
             self._mpv_bin,
             "--no-terminal",
+            "--msg-level=all=warn,cplayer=info,ffmpeg=error",
             f"--volume={volume}",
             "--osd-level=0",
             f"--log-file={log_file}",
@@ -678,11 +683,11 @@ class PlayerEngine:
             code = proc.returncode
             # En la Pi yt-dlp puede tardar 10–15 s; solo fallo si muere muy pronto
             if user_track and code not in (0, None) and elapsed < 20.0:
-                self._log_mpv_tail()
+                self._log_mpv_tail(user_track=True)
                 logger.error("mpv salió en %.1fs con código %s", elapsed, code)
                 return False
             if not user_track and code not in (0, None) and elapsed < 12.0:
-                self._log_mpv_tail()
+                self._log_mpv_tail(user_track=False)
                 logger.warning("mpv ambiente salió en %.1fs code=%s", elapsed, code)
                 return False
             logger.info("mpv (%s) terminó code=%s elapsed=%.1fs", role, code, elapsed)
@@ -728,8 +733,8 @@ class PlayerEngine:
         except OSError:
             logger.exception("Error deteniendo mpv")
 
-    def _log_mpv_tail(self) -> None:
-        log_file = self._log_dir / "mpv-user.log"
+    def _log_mpv_tail(self, *, user_track: bool = True) -> None:
+        log_file = self._log_dir / ("mpv-user.log" if user_track else "mpv-ambient.log")
         if not log_file.is_file():
             return
         try:
@@ -739,7 +744,7 @@ class PlayerEngine:
                 for ln in lines[-40:]
                 if any(
                     k in ln.lower()
-                    for k in ("error", "fatal", "failed", "exiting", "ytdl")
+                    for k in ("error", "fatal", "failed", "exiting", "ytdl", "ao/")
                 )
             ]
             for ln in interesting[-15:]:
