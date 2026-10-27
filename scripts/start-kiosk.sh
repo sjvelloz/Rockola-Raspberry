@@ -54,10 +54,14 @@ if [ -n "${DISPLAY:-}" ] && command -v unclutter >/dev/null 2>&1; then
   unclutter -idle 0.2 -root >/dev/null 2>&1 &
 fi
 
+# UI en la táctil (derecha, +1920). La tele (HP) queda en 0,0 para mpv.
+UI_POS="${ROCKOLA_UI_POSITION:-1920,0}"
+
 # Flags pensados para Pi táctil: fullscreen real, sin zoom raro, más fluido
 exec "$CHROME" \
   --kiosk \
   --start-fullscreen \
+  --window-position="$UI_POS" \
   --noerrdialogs \
   --disable-infobars \
   --disable-session-crashed-bubble \

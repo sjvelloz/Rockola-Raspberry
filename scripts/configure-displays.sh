@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Detecta pantallas y escribe rockola.env + mapeo táctil labwc.
-# Dual HDMI típico Rockola:
-#   HDMI-A-1 Mediatrix/MPI = táctil UI
-#   HDMI-A-2 HP/tele       = vídeo mpv
+# Dual HDMI Rockola:
+#   TELE (HP / HDMI-A-2)  → posición 0,0  (primaria: fullscreen de mpv/SDL cae aquí)
+#   TÁCTIL (Mediatrix)    → posición 1920,0 + toque mapeado + Chromium
 #
 # Uso: bash ~/Rockola-Raspberry/scripts/configure-displays.sh
 
@@ -24,128 +23,118 @@ mapfile -t OUTS < <(
     xrandr --listmonitors >&2 || xrandr >&2
     xrandr --listmonitors 2>/dev/null | tail -n +2 | awk '{print $NF}'
   else
-    echo "No hay wlr-randr ni xrandr. Instala: sudo apt install -y wlr-randr" >&2
+    echo "No hay wlr-randr ni xrandr." >&2
   fi
 )
 
-VIDEO_IDX=""
-UI_IDX=""
 VIDEO_NAME=""
 UI_NAME=""
 
-for i in "${!OUTS[@]}"; do
-  name="${OUTS[$i]}"
+# Preferencias conocidas de este hardware
+for name in "${OUTS[@]}"; do
   up="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
-  echo "  [$i] $name"
-
-  # Táctil Mediatrix / DSI / panel pequeño
-  if echo "$up" | grep -qE 'DSI|DPI|PANEL' \
-    || wlr-randr 2>/dev/null | awk -v n="$name" '
-        $0 ~ "^"n" " {p=1; next}
-        p && /^[^ ]/ {exit}
-        p && /Mediatrix|MPI|QDtech|touch/ {found=1}
-        END {exit !found}
-      '; then
-    UI_IDX="$i"
-    UI_NAME="$name"
-  fi
+  echo "  found $name"
 done
 
-# Si no detectamos táctil por modelo, HDMI-A-1 suele ser la Mediatrix en esta Pi
-if [ -z "${UI_NAME}" ]; then
-  for i in "${!OUTS[@]}"; do
-    if [ "${OUTS[$i]}" = "HDMI-A-1" ]; then
-      UI_IDX="$i"
-      UI_NAME="${OUTS[$i]}"
+# UI = Mediatrix / DSI / HDMI-A-1
+for name in "${OUTS[@]}"; do
+  if [ "$name" = "HDMI-A-1" ]; then
+    UI_NAME="$name"
+    break
+  fi
+done
+if [ -z "$UI_NAME" ]; then
+  for name in "${OUTS[@]}"; do
+    up="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
+    if echo "$up" | grep -qE 'DSI|DPI|PANEL'; then
+      UI_NAME="$name"
       break
     fi
   done
 fi
 
-# Vídeo = otra salida HDMI (preferir A-2 / última HDMI distinta de UI)
-for i in "${!OUTS[@]}"; do
-  name="${OUTS[$i]}"
+# Vídeo = otra HDMI (HP / HDMI-A-2)
+for name in "${OUTS[@]}"; do
+  [ "$name" = "$UI_NAME" ] && continue
   up="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
-  if [ "$name" = "${UI_NAME:-}" ]; then
-    continue
-  fi
   if echo "$up" | grep -qE 'HDMI|DP-'; then
-    VIDEO_IDX="$i"
     VIDEO_NAME="$name"
   fi
 done
 
-if [ -z "${VIDEO_IDX}" ] && [ "${#OUTS[@]}" -ge 1 ]; then
-  # Una sola pantalla o fallback
-  if [ -n "${UI_IDX}" ] && [ "${#OUTS[@]}" -ge 2 ]; then
-    for i in "${!OUTS[@]}"; do
-      if [ "$i" != "$UI_IDX" ]; then
-        VIDEO_IDX="$i"
-        VIDEO_NAME="${OUTS[$i]}"
-        break
-      fi
-    done
-  else
-    VIDEO_IDX=0
-    VIDEO_NAME="${OUTS[0]:-}"
-  fi
+# Fallbacks
+if [ -z "$VIDEO_NAME" ] && [ "${#OUTS[@]}" -ge 1 ]; then
+  VIDEO_NAME="${OUTS[0]}"
+fi
+if [ -z "$UI_NAME" ] && [ "${#OUTS[@]}" -ge 2 ]; then
+  for name in "${OUTS[@]}"; do
+    if [ "$name" != "$VIDEO_NAME" ]; then
+      UI_NAME="$name"
+      break
+    fi
+  done
 fi
 
-if [ -z "${VIDEO_IDX}" ]; then
-  VIDEO_IDX=0
-  echo "Aviso: solo se ve una pantalla. mpv usará pantalla 0."
-fi
+VIDEO_NAME="${VIDEO_NAME:-HDMI-A-2}"
+UI_NAME="${UI_NAME:-HDMI-A-1}"
 
-# Recalcular índice de vídeo según el orden ACTUAL de salidas (el de mpv/labwc)
-VIDEO_IDX=""
-UI_IDX=""
-for i in "${!OUTS[@]}"; do
-  if [ "${OUTS[$i]}" = "${VIDEO_NAME:-}" ]; then
-    VIDEO_IDX="$i"
-  fi
-  if [ "${OUTS[$i]}" = "${UI_NAME:-}" ]; then
-    UI_IDX="$i"
-  fi
-done
-# Si no hay nombre, fallback numérico anterior
-if [ -z "${VIDEO_IDX}" ]; then
-  VIDEO_IDX=0
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+
+# CLAVE: tele en 0,0 (primaria). mpv/SDL fullscreen va a la primaria.
+if command -v wlr-randr >/dev/null 2>&1; then
+  echo "==> Layout: TELE($VIDEO_NAME)=0,0  UI($UI_NAME)=1920,0"
+  wlr-randr --output "$VIDEO_NAME" --pos 0,0 2>/dev/null || true
+  wlr-randr --output "$UI_NAME" --pos 1920,0 2>/dev/null || true
 fi
 
 cat > "$ENV_FILE" <<EOF
 # Generado por configure-displays.sh — $(date -Iseconds)
-# Pantalla del VÍDEO (tele). Preferir ROCKOLA_VIDEO_OUTPUT (nombre);
-# el índice solo es respaldo (cambia con el orden del compositor).
-ROCKOLA_VIDEO_OUTPUT=${VIDEO_NAME:-HDMI-A-2}
-ROCKOLA_UI_OUTPUT=${UI_NAME:-HDMI-A-1}
-ROCKOLA_MPV_FS_SCREEN=${VIDEO_IDX}
+# TELE en 0,0 (primaria) para que mpv fullscreen (vo/sdl) salga ahí.
+ROCKOLA_VIDEO_OUTPUT=${VIDEO_NAME}
+ROCKOLA_UI_OUTPUT=${UI_NAME}
+ROCKOLA_MPV_FS_SCREEN=0
+ROCKOLA_VIDEO_GEOMETRY=1920x1080+0+0
+ROCKOLA_UI_GEOMETRY=1920x1080+1920+0
 EOF
 
 echo
 echo "Escrito $ENV_FILE:"
 cat "$ENV_FILE"
 
-# Mapear táctil USB a la salida UI (evita que el toque mueva el cursor en la tele)
-if [ -n "${UI_NAME}" ]; then
-  mkdir -p "$(dirname "$LABWC_RC")"
-  cat > "$LABWC_RC" <<EOF
+mkdir -p "$(dirname "$LABWC_RC")"
+cat > "$LABWC_RC" <<EOF
 <?xml version="1.0"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
 	<touch deviceName="QDtech MPI1001" mapToOutput="${UI_NAME}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.1)" mapToOutput="${UI_NAME}" mouseEmulation="yes"/>
+	<windowRules>
+		<!-- UI Chromium siempre en la táctil (derecha) -->
+		<windowRule identifier="chromium*">
+			<action name="MoveTo" x="1920" y="0"/>
+		</windowRule>
+		<windowRule identifier="Chromium*">
+			<action name="MoveTo" x="1920" y="0"/>
+		</windowRule>
+		<windowRule identifier="org.chromium.Chromium">
+			<action name="MoveTo" x="1920" y="0"/>
+		</windowRule>
+		<!-- mpv: tele primaria (0,0); por si acaso forzar MoveTo -->
+		<windowRule identifier="mpv">
+			<action name="MoveTo" x="0" y="0"/>
+		</windowRule>
+	</windowRules>
 </openbox_config>
 EOF
-  echo
-  echo "Táctil mapeado a ${UI_NAME} en $LABWC_RC"
-  # Colocar UI a la izquierda, tele a la derecha
-  if command -v wlr-randr >/dev/null 2>&1; then
-    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    wlr-randr --output "$UI_NAME" --pos 0,0 2>/dev/null || true
-    if [ -n "${VIDEO_NAME}" ] && [ "$VIDEO_NAME" != "$UI_NAME" ]; then
-      wlr-randr --output "$VIDEO_NAME" --pos 1920,0 2>/dev/null || true
-    fi
-  fi
-  labwc --reconfigure 2>/dev/null || killall -HUP labwc 2>/dev/null || true
+echo "labwc rc → touch=${UI_NAME}, chromium@1920, mpv@0"
+labwc --reconfigure 2>/dev/null || killall -HUP labwc 2>/dev/null || true
+
+# Reiniciar kiosk en la táctil si está corriendo
+if pgrep -f 'rockola-chromium|chromium.*8000' >/dev/null 2>&1; then
+  echo "==> Reiniciando Chromium kiosk en la táctil…"
+  pkill -f 'chromium.*rockola-chromium' 2>/dev/null || true
+  sleep 1
+  nohup "$ROOT/scripts/start-kiosk.sh" >/tmp/rockola-kiosk.log 2>&1 &
 fi
 
 echo

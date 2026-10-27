@@ -187,6 +187,8 @@ class PlayerEngine:
         # Pantalla de vídeo (tele / HDMI). Ver scripts/configure-displays.sh
         self._fs_screen = os.environ.get("ROCKOLA_MPV_FS_SCREEN", "").strip()
         self._video_output = os.environ.get("ROCKOLA_VIDEO_OUTPUT", "").strip()
+        # p.ej. 1920x1080+0+0 — la tele debe estar en 0,0 (ver configure-displays.sh)
+        self._video_geometry = os.environ.get("ROCKOLA_VIDEO_GEOMETRY", "").strip()
         self._drm_connector = os.environ.get("ROCKOLA_MPV_DRM_CONNECTOR", "").strip()
         # Audio: pipewire/pulse/alsa. Ej: ROCKOLA_AO=alsa  o  ROCKOLA_AUDIO_DEVICE=...
         self._ao = os.environ.get("ROCKOLA_AO", "pipewire,pulse,alsa").strip()
@@ -588,26 +590,28 @@ class PlayerEngine:
                     ]
                 )
             else:
+                # vo/sdl (defecto en esta Pi) manda fullscreen a la salida en 0,0.
+                # configure-displays.sh coloca la TELE en 0,0 y la táctil en 1920,0.
+                if self._video_geometry:
+                    cmd.append(f"--geometry={self._video_geometry}")
                 cmd.append("--fullscreen")
-                if self._hwdec and self._hwdec.lower() not in {"no", "none", "off", "0"}:
-                    cmd.append(f"--hwdec={self._hwdec}")
-                # Tele / HDMI de vídeo (NO la táctil).
-                # Preferir nombre de salida: el índice de --fs-screen cambia según
-                # el orden del compositor (aquí 1 era la Mediatrix, no la HP).
+                cmd.append("--fs-screen=0")
+                cmd.append("--screen=0")
                 if self._video_output:
                     cmd.append(f"--fs-screen-name={self._video_output}")
                     cmd.append(f"--screen-name={self._video_output}")
                 elif self._fs_screen != "":
                     cmd.append(f"--fs-screen={self._fs_screen}")
                     cmd.append(f"--screen={self._fs_screen}")
+                if self._hwdec and self._hwdec.lower() not in {"no", "none", "off", "0"}:
+                    cmd.append(f"--hwdec={self._hwdec}")
                 if self._drm_connector:
                     cmd.append(f"--drm-connector={self._drm_connector}")
                 logger.info(
-                    "mpv vídeo → output=%r fs-screen=%r ao=%r hwdec=%r",
+                    "mpv vídeo → geo=%r output=%r ao=%r",
+                    self._video_geometry or None,
                     self._video_output or None,
-                    self._fs_screen or None,
                     self._ao,
-                    self._hwdec,
                 )
         else:
             cmd.append("--no-video")
