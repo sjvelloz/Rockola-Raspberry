@@ -3,7 +3,7 @@
 Mantenimiento de arranque: actualiza yt-dlp (`yt-dlp -U`).
 
 Uso típico (systemd ExecStartPre):
-  /home/pi/Rockola-Raspberry/venv/bin/python maintenance.py
+  /home/saskweise/Rockola-Raspberry/venv/bin/python maintenance.py
 
 No aborta el arranque del jukebox si la actualización falla
 (p. ej. sin red): registra el error y sale con código 0.
@@ -135,7 +135,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.strict:
         return code
 
-    # Arranque resiliente: no bloquear jukebox.service si falla la update
     if code != 0:
         logging.warning(
             "Actualización fallida (código %s); el jukebox continuará con la versión instalada.",

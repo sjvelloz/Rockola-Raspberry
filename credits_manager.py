@@ -139,10 +139,6 @@ class CreditsManager:
         self._started = False
         logger.info("GPIO detenido.")
 
-    # ------------------------------------------------------------------
-    # Polling (flanco de bajada = HIGH→LOW)
-    # ------------------------------------------------------------------
-
     def _poll_loop(self) -> None:
         assert GPIO is not None
         while not self._stop_poll.is_set():
@@ -167,7 +163,6 @@ class CreditsManager:
                 handler()
             self._prev_levels[pin] = level
 
-        # Reboot: mantener LOW durante reboot_hold_seconds
         reboot_level = GPIO.input(self.reboot_pin)
         if reboot_level == GPIO.LOW:
             if self._reboot_low_since is None:
@@ -177,7 +172,7 @@ class CreditsManager:
                     self.reboot_hold_seconds,
                 )
             elif now - self._reboot_low_since >= self.reboot_hold_seconds:
-                self._reboot_low_since = None  # evitar repetición
+                self._reboot_low_since = None
                 logger.warning("Reiniciando Raspberry Pi…")
                 try:
                     self.on_reboot()
@@ -224,10 +219,6 @@ class CreditsManager:
     @staticmethod
     def _default_reboot() -> None:
         subprocess.Popen(["sudo", "-n", "reboot"], start_new_session=True)
-
-    # ------------------------------------------------------------------
-    # Créditos
-    # ------------------------------------------------------------------
 
     def add_credit(self, amount: int = 1) -> int:
         if amount < 1:

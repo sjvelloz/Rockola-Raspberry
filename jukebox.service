@@ -10,7 +10,7 @@ User=saskweise
 Group=saskweise
 WorkingDirectory=/home/saskweise/Rockola-Raspberry
 
-# Actualiza yt-dlp en cada arranque (sin --quiet raro; el script ya es resiliente)
+# Actualiza yt-dlp en cada arranque (sin --quiet; el script ya es resiliente)
 ExecStartPre=/home/saskweise/Rockola-Raspberry/venv/bin/python /home/saskweise/Rockola-Raspberry/maintenance.py
 
 ExecStart=/home/saskweise/Rockola-Raspberry/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
