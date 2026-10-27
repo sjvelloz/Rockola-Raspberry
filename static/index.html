@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1280, height=800, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Rockola</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <div id="kiosk" class="kiosk">
+    <header class="header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <h1 class="brand-name">Rockola</h1>
+      </div>
+      <div class="credits-pill" id="credits-panel" aria-live="polite">
+        <span class="credits-label">Fichas Disponibles</span>
+        <span class="credits-value" id="credits-count">0</span>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <div class="search-wrap">
+        <input
+          id="search-input"
+          class="search-input"
+          type="text"
+          inputmode="none"
+          readonly
+          placeholder="Toca aquí y escribe con el teclado…"
+          autocomplete="off"
+          spellcheck="false"
+          tabindex="0"
+        />
+        <button id="search-btn" class="btn btn-primary" type="button">Buscar</button>
+      </div>
+      <button id="top-btn" class="btn btn-hot" type="button">🔥 Las Más Sonadas</button>
+    </section>
+
+    <div class="workspace">
+      <main class="results-pane">
+        <div class="pane-title" id="results-title">Resultados</div>
+        <section id="results" class="results-grid" aria-live="polite"></section>
+        <div id="results-empty" class="empty-hint">
+          Busca una canción o abre <strong>Las Más Sonadas</strong>
+        </div>
+      </main>
+
+      <aside class="queue-pane" id="queue-panel">
+        <div class="pane-title">Cola de reproducción</div>
+        <div class="now-playing" id="now-playing">
+          <div class="now-label">Sonando</div>
+          <div class="now-title" id="now-title">Música de ambiente</div>
+        </div>
+        <ol id="queue-list" class="queue-list"></ol>
+        <div id="queue-empty" class="queue-empty">Sin canciones en cola</div>
+      </aside>
+    </div>
+
+    <section id="keyboard" class="keyboard" aria-label="Teclado táctil">
+      <div class="kb-row" data-row="1"></div>
+      <div class="kb-row" data-row="2"></div>
+      <div class="kb-row" data-row="3"></div>
+      <div class="kb-row" data-row="4"></div>
+      <div class="kb-row kb-row-bottom" data-row="5"></div>
+    </section>
+
+    <footer class="footer">
+      <span class="footer-state">Estado: <strong id="player-state">IDLE</strong></span>
+      <span class="footer-hint" id="status-hint">Inserta fichas para seleccionar canciones</span>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" hidden role="status" aria-live="assertive"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

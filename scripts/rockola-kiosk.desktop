@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Rockola Kiosk
+Comment=Chromium pantalla completa — jukebox
+Exec=/home/pi/Rockola-Raspberry/scripts/start-kiosk.sh
+X-GNOME-Autostart-enabled=true
+Terminal=false
