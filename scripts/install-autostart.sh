@@ -8,9 +8,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 USER_NAME="$(whoami)"
 HOME_DIR="${HOME}"
+UID_NUM="$(id -u)"
 
 echo "==> Proyecto: $ROOT"
-echo "==> Usuario:  $USER_NAME"
+echo "==> Usuario:  $USER_NAME (uid $UID_NUM)"
 
 chmod +x "$ROOT/scripts/start-kiosk.sh" "$ROOT/scripts/install-autostart.sh"
 
@@ -37,6 +38,8 @@ sed \
   -e "s|^Group=.*|Group=$USER_NAME|" \
   -e "s|/home/saskweise/.config/mpv|$HOME_DIR/.config/mpv|" \
   -e "s|/home/pi/.config/mpv|$HOME_DIR/.config/mpv|" \
+  -e "s|/run/user/[0-9][0-9]*/|/run/user/${UID_NUM}/|g" \
+  -e "s|/run/user/%U|/run/user/${UID_NUM}|g" \
   "$ROOT/jukebox.service" > "$TMP_UNIT"
 
 sudo cp "$TMP_UNIT" /etc/systemd/system/jukebox.service

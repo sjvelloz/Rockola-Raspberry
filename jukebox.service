@@ -21,10 +21,12 @@ TimeoutStartSec=120
 
 Environment=PYTHONUNBUFFERED=1
 Environment=MPV_HOME=/home/saskweise/.config/mpv
-# Crítico: audio de PipeWire/Pulse del usuario gráfico (si no → silencio y mpv corta)
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-Environment=PULSE_RUNTIME_PATH=/run/user/%U/pulse
-Environment=PIPEWIRE_RUNTIME_DIR=/run/user/%U
+# Crítico: PipeWire del usuario gráfico.
+# NO usar %U aquí: en unidades de sistema systemd lo expande a 0 (root) → sin audio.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_RUNTIME_PATH=/run/user/1000/pulse
+Environment=PIPEWIRE_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
 # Valores por defecto; rockola.env puede sobrescribir pantalla HDMI
 Environment=ROCKOLA_MPV_FS_SCREEN=1
 EnvironmentFile=-/home/saskweise/Rockola-Raspberry/rockola.env
