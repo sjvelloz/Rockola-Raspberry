@@ -23,7 +23,9 @@ PIN_SKIP = 22          # Saltar canción actual (personal)
 PIN_REBOOT = 23        # Reiniciar Pi (mantener 2.5 s)
 
 REBOOT_HOLD_SECONDS = 2.5
-AMBIENT_VOLUME = 45
+# Volumen a tope: se modula desde el amplificador externo
+AMBIENT_VOLUME = 100
+USER_VOLUME = 100
 
 
 def get_ambient_playlist_url() -> str | None:

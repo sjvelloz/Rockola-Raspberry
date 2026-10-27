@@ -28,7 +28,12 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import random
 
-from config import AMBIENT_DIR, AMBIENT_VOLUME, get_ambient_playlist_url
+from config import (
+    AMBIENT_DIR,
+    AMBIENT_VOLUME,
+    USER_VOLUME,
+    get_ambient_playlist_url,
+)
 from database import registrar_reproduccion
 from youtube_service import (
     MAX_DURATION_SECONDS,
@@ -45,7 +50,6 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent
 DEFAULT_AMBIENT_DIR = AMBIENT_DIR
 
-USER_VOLUME = 100
 FADE_STEPS = 8
 FADE_STEP_MS = 80
 
@@ -182,6 +186,7 @@ class PlayerEngine:
         self._windowed = env_windowed or (platform.system() == "Windows" and not env_fs)
         # Pantalla de vídeo (tele / HDMI). Ver scripts/configure-displays.sh
         self._fs_screen = os.environ.get("ROCKOLA_MPV_FS_SCREEN", "").strip()
+        self._video_output = os.environ.get("ROCKOLA_VIDEO_OUTPUT", "").strip()
         self._drm_connector = os.environ.get("ROCKOLA_MPV_DRM_CONNECTOR", "").strip()
         # Audio: pipewire/pulse/alsa. Ej: ROCKOLA_AO=alsa  o  ROCKOLA_AUDIO_DEVICE=...
         self._ao = os.environ.get("ROCKOLA_AO", "pipewire,pulse,alsa").strip()
@@ -586,17 +591,17 @@ class PlayerEngine:
                 cmd.append("--fullscreen")
                 if self._hwdec and self._hwdec.lower() not in {"no", "none", "off", "0"}:
                     cmd.append(f"--hwdec={self._hwdec}")
-                # Solo forzar pantalla si está definida (evitar índice inválido → corte a los pocos s)
+                # Tele / HDMI de vídeo (no la táctil). Índice 1 = HDMI-A-2 en esta Pi.
                 if self._fs_screen != "":
                     cmd.append(f"--fs-screen={self._fs_screen}")
                     cmd.append(f"--screen={self._fs_screen}")
                 if self._drm_connector:
                     cmd.append(f"--drm-connector={self._drm_connector}")
                 logger.info(
-                    "mpv vídeo → fs-screen=%r ao=%r device=%r hwdec=%r",
+                    "mpv vídeo → fs-screen=%r output=%r ao=%r hwdec=%r",
                     self._fs_screen or None,
+                    self._video_output or None,
                     self._ao,
-                    self._audio_device or "default",
                     self._hwdec,
                 )
         else:
