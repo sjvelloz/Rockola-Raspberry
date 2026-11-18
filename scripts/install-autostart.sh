@@ -63,34 +63,31 @@ sudo systemctl enable jukebox.service
 sudo systemctl restart jukebox.service
 echo "    jukebox.service: $(systemctl is-enabled jukebox.service) / $(systemctl is-active jukebox.service)"
 
-# --- Desktop autostart (.desktop) ---
-echo "==> Autostart Chromium (.desktop)…"
+# --- Sesión Rockola (layout + táctil + audio + Chromium) ---
+echo "==> Autostart sesión Rockola…"
+chmod +x "$ROOT/scripts/rockola-session.sh" "$ROOT/scripts/start-kiosk.sh"
+sed -i 's/\r$//' "$ROOT/scripts/rockola-session.sh" "$ROOT/scripts/start-kiosk.sh" 2>/dev/null || true
+
 mkdir -p "$HOME_DIR/.config/autostart"
 cat > "$HOME_DIR/.config/autostart/rockola-kiosk.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Rockola Kiosk
-Comment=Chromium pantalla completa — jukebox
-Exec=$ROOT/scripts/start-kiosk.sh
+Comment=Sesión Rockola (pantallas + Chromium)
+Exec=$ROOT/scripts/rockola-session.sh
 X-GNOME-Autostart-enabled=true
 Terminal=false
 EOF
 
-# --- labwc (Bookworm Wayland por defecto) ---
-if [ -d "$HOME_DIR/.config/labwc" ] || true; then
-  echo "==> Autostart labwc…"
-  mkdir -p "$HOME_DIR/.config/labwc"
-  AUTOSTART="$HOME_DIR/.config/labwc/autostart"
-  LINE="$ROOT/scripts/start-kiosk.sh &"
-  touch "$AUTOSTART"
-  if ! grep -Fq "start-kiosk.sh" "$AUTOSTART" 2>/dev/null; then
-    echo "$LINE" >> "$AUTOSTART"
-    echo "    Añadido a $AUTOSTART"
-  else
-    echo "    Ya estaba en $AUTOSTART"
-  fi
-  chmod +x "$AUTOSTART" 2>/dev/null || true
-fi
+# labwc: un solo entry limpio (no duplicar start-kiosk)
+mkdir -p "$HOME_DIR/.config/labwc"
+AUTOSTART="$HOME_DIR/.config/labwc/autostart"
+cat > "$AUTOSTART" <<EOF
+# Rockola — generado por install-autostart.sh
+$ROOT/scripts/rockola-session.sh &
+EOF
+chmod +x "$AUTOSTART"
+echo "    labwc autostart → rockola-session.sh"
 
 # --- wayfire (por si acaso) ---
 if [ -f "$HOME_DIR/.config/wayfire.ini" ]; then
