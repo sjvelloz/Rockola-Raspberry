@@ -20,6 +20,7 @@ import time
 from typing import Callable
 
 from config import (
+    COIN_CREDITS,
     PIN_COIN,
     PIN_CREDIT,
     PIN_REBOOT,
@@ -197,8 +198,9 @@ class CreditsManager:
     def _fire_coin(self) -> None:
         if not self._debounce_ok("_last_coin_ts"):
             return
-        logger.debug("Pulso monedero (GPIO %d)", self.coin_pin)
-        self.add_credit(1)
+        n = max(1, int(COIN_CREDITS))
+        logger.info("Pulso monedero (GPIO %d): +%d créditos", self.coin_pin, n)
+        self.add_credit(n)
 
     def _fire_credit(self) -> None:
         if not self._debounce_ok("_last_credit_ts", 300):

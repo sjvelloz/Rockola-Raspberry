@@ -34,6 +34,7 @@ Environment=WAYLAND_DISPLAY=wayland-0
 Environment=ROCKOLA_VIDEO_OUTPUT=HDMI-A-2
 Environment=ROCKOLA_X11_SCREEN=1
 Environment=ROCKOLA_VIDEO_GEOMETRY=1920x1080+1920+0
+Environment=ROCKOLA_COIN_CREDITS=3
 EnvironmentFile=-/home/saskweise/Rockola-Raspberry/rockola.env
 
 SupplementaryGroups=gpio video audio render

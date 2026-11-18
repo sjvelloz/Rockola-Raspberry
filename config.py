@@ -23,6 +23,8 @@ PIN_SKIP = 22          # Saltar canción actual (personal)
 PIN_REBOOT = 23        # Reiniciar Pi (mantener 2.5 s)
 
 REBOOT_HOLD_SECONDS = 2.5
+# Créditos por pulso del monedero CH-926
+COIN_CREDITS = int(os.environ.get("ROCKOLA_COIN_CREDITS", "3") or "3")
 # Volumen a tope: se modula desde el amplificador externo
 AMBIENT_VOLUME = 100
 USER_VOLUME = 100
