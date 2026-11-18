@@ -141,11 +141,21 @@ MPV_X=1920
 if [ -z "$UI_NAME" ] || [ "$UI_NAME" = "$VIDEO_NAME" ]; then
   MPV_X=0
 fi
+# Nombre exacto del táctil (cambia con el puerto USB: 1-1.1, 1-1.2, …)
+TOUCH_DEV="$(libinput list-devices 2>/dev/null | awk '
+  /^Device:/ {name=substr($0,9); gsub(/^ +/,"",name)}
+  /Capabilities:.*touch/ {print name; exit}
+')"
+TOUCH_DEV="${TOUCH_DEV:-QDtech MPI1001}"
 cat > "$LABWC_RC" <<EOF
 <?xml version="1.0"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
+	<touch deviceName="${TOUCH_DEV}" mapToOutput="${TOUCH_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001" mapToOutput="${TOUCH_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.1)" mapToOutput="${TOUCH_OUT}" mouseEmulation="yes"/>
+	<touch deviceName="QDtech MPI1001 (USB 1-1.2)" mapToOutput="${TOUCH_OUT}" mouseEmulation="yes"/>
+	<touch deviceName="QDtech MPI1001 (USB 1-1.3)" mapToOutput="${TOUCH_OUT}" mouseEmulation="yes"/>
+	<touch deviceName="QDtech MPI1001 (USB 1-1.4)" mapToOutput="${TOUCH_OUT}" mouseEmulation="yes"/>
 	<windowRules>
 		<windowRule identifier="chromium*">
 			<action name="MoveTo" x="0" y="0"/>
@@ -163,6 +173,7 @@ cat > "$LABWC_RC" <<EOF
 </openbox_config>
 EOF
 labwc --reconfigure 2>/dev/null || killall -HUP labwc 2>/dev/null || true
+echo "Táctil '${TOUCH_DEV}' → ${TOUCH_OUT}"
 
 echo
 echo "Reinicia: sudo systemctl restart jukebox.service"
