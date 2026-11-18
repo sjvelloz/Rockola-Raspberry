@@ -47,7 +47,7 @@ Vista típica de la Pi con los pines **que usamos** (numeración **BCM**, la que
 
 | Señal | Pin físico | BCM | Qué hace |
 |-------|------------|-----|----------|
-| Monedero (vía PC817) | 11 | **17** | +1 ficha por pulso |
+| Monedero (vía PC817) | 11 | **17** | +**3** créditos por pulso de ficha |
 | Botón crédito | 13 | **27** | +1 crédito (personal / compensar) |
 | Botón skip | 15 | **22** | Salta la canción actual |
 | Botón reinicio | 16 | **23** | Reinicia la Pi si **mantienes 2,5 s** |
@@ -63,8 +63,30 @@ Vista típica de la Pi con los pines **que usamos** (numeración **BCM**, la que
 
 ### Para probar rápido (recomendado al principio)
 - Protoboard pequeña + cables Dupont hembra-macho (o hembra-hembra + botones con patillas).
+- **No hace falta enchufar nada al resto del header de 40 pines**: solo 4 señales + **1 GND común**.
 - Cada botón: **un lado a GND**, **el otro al GPIO**.
 - La Pi tiene **pull-up interno**: no hace falta resistencia extra para los botones.
+
+```
+   Desde la Pi (solo estos cables):
+     pin físico 11 → BCM 17  monedero (vía PC817)
+     pin físico 13 → BCM 27  botón crédito
+     pin físico 15 → BCM 22  botón skip
+     pin físico 16 → BCM 23  botón reinicio
+     pin físico  6 → GND     (o 9 / 14 / 20 — da igual cuál)
+
+   En la protoboard:
+     riel GND  ←── único cable GND desde la Pi
+                    │
+        ┌───────────┼───────────┬───────────┐
+        │           │           │           │
+     [crédito]   [skip]     [reboot]    [colector
+        │           │           │        del PC817]
+        │           │           │           │
+       BCM27      BCM22       BCM23       BCM17
+```
+
+Detalle de un botón (los 3 iguales):
 
 ```
    GPIO 27/22/23 ─────┬──── pin del botón
@@ -216,7 +238,7 @@ crontab -e
 5. Botón **skip (22)**: corta la canción.
 6. Botón **reboot (23)**: mantener 2,5 s → reinicia (un toque corto no hace nada).
 7. Vacía la cola: debe sonar ambiente **aleatorio** de tu playlist (solo audio).
-8. Monedero: una ficha = +1 crédito.
+8. Monedero: una ficha = +3 créditos (`ROCKOLA_COIN_CREDITS=3`).
 
 Logs útiles:
 
