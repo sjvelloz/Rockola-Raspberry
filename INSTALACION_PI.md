@@ -14,7 +14,7 @@ Paso a paso para dejarla **niquelada**: hardware, pines, software, kiosk y tele.
 | Pantalla DSI táctil 10,1" (1280×800) | UI Rockola (buscar / fichas / cola) |
 | Tele por **micro-HDMI → HDMI** | Vídeo de las canciones de pago |
 | Monedero CH-926 + optoacoplador PC817 | Fichas → GPIO 17 |
-| 3 botones pulsadores | Crédito / Skip / Reinicio |
+| 5 botones pulsadores | Crédito / Skip / Pausa / Cumpleaños / Reinicio |
 | Altavoces o audio de la tele | Sonido |
 | (Opcional) protoboard + cables Dupont | Probar botones antes de caja definitiva |
 
@@ -37,9 +37,9 @@ Vista típica de la Pi con los pines **que usamos** (numeración **BCM**, la que
                       GPIO17 (11) (12)  GPIO18   ◄── 17 = MONEDERO (CH-926 / PC817)
                       GPIO27 (13) (14)  GND      ◄── 27 = +1 CRÉDITO
                       GPIO22 (15) (16)  GPIO23   ◄── 22 = SKIP | 23 = REINICIO (hold 2,5s)
-                         3V3 (17) (18)  GPIO24
+                         3V3 (17) (18)  GPIO24   ◄── 24 = PAUSA
                       GPIO10 (19) (20)  GND
-                       GPIO9 (21) (22)  GPIO25
+                       GPIO9 (21) (22)  GPIO25   ◄── 25 = CUMPLEAÑOS (picker en pantalla)
                       GPIO11 (23) (24)  GPIO8
                          GND (25) (26)  GPIO7
                        … resto no usado por la Rockola …
@@ -51,7 +51,10 @@ Vista típica de la Pi con los pines **que usamos** (numeración **BCM**, la que
 | Botón crédito | 13 | **27** | +1 crédito (personal / compensar) |
 | Botón skip | 15 | **22** | Salta la canción actual |
 | Botón reinicio | 16 | **23** | Reinicia la Pi si **mantienes 2,5 s** |
+| Botón pausa | 18 | **24** | Pausa / reanuda lo que suena |
+| Botón cumpleaños | 22 | **25** | Abre selector de 5 canciones en la táctil |
 | Masa | 6, 9, 14, 20, 25… | **GND** | Común de botones y opto |
+| 3V3 | 1 o 17 | **3V3** | VCC de los módulos de botón |
 
 **Importante:** en el código y en esta guía hablamos siempre de **BCM** (17, 27, 22, 23), no del número “físico” de la placa.
 
@@ -103,7 +106,9 @@ Muchos pulsadores de protoboard traen 3 pines. Cableado:
 |----------------|----------|
 | **VCC** | **3V3** de la Pi (pin 1 o 17), **no 5V** |
 | **GND** | riel GND común |
-| **OUT** | GPIO 27 / 22 / 23 según el botón |
+| **OUT** | GPIO 27 / 22 / 23 / 24 / 25 según el botón |
+
+**Cumpleaños:** el botón GPIO 25 solo abre el menú en pantalla. Al elegir una canción se corta lo actual (se reencola detrás), suena el cumpleaños **sin gastar ficha** y luego sigue la cola con normalidad.
 
 En reposo OUT está en bajo; al pulsar sale en alto. El software usa `BUTTON_ACTIVE_HIGH=True` para eso (si usas pulsadores de 2 patillas a GND, cámbialo a `False` en `config.py`).
 
@@ -280,8 +285,10 @@ tail -f /home/pi/Rockola-Raspberry/logs/maintenance.log
 
 | Botón en el frontal | Cable a | Uso diario |
 |---------------------|---------|------------|
-| “+ crédito” / servicio | GPIO **27** + GND | Equipo: regalar/compensar ficha |
-| “Saltar” | GPIO **22** + GND | Tema malo / atasco |
-| “Reinicio” (escondido o con protectión) | GPIO **23** + GND | Mantener 2,5 s si se cuelga |
+| “+ crédito” / servicio | GPIO **27** (+ VCC/GND del módulo) | Equipo: regalar/compensar ficha |
+| “Saltar” | GPIO **22** | Tema malo / atasco |
+| “Pausa” | GPIO **24** | Pausar / reanudar |
+| “Cumpleaños” | GPIO **25** | Menú de 5 temas en la táctil |
+| “Reinicio” (escondido) | GPIO **23** | Mantener 2,5 s si se cuelga |
 
 Más detalle de kiosk/systemd también en `KIOSK.md`. Cuando cambies la interfaz, el backend y estos pines no hace falta tocarlos.

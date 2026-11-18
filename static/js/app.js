@@ -24,6 +24,10 @@
     hint: document.getElementById("status-hint"),
     toast: document.getElementById("toast"),
     keyboard: document.getElementById("keyboard"),
+    pauseIndicator: document.getElementById("pause-indicator"),
+    birthdayModal: document.getElementById("birthday-modal"),
+    birthdayGrid: document.getElementById("birthday-grid"),
+    birthdayClose: document.getElementById("birthday-close"),
   };
 
   let credits = 0;
@@ -31,6 +35,8 @@
   let searching = false;
   let toastTimer = 0;
   let keyboardTarget = true;
+  let birthdaySongs = null;
+  let birthdayBusy = false;
 
   // Escala el layout 1280×800 para llenar la pantalla táctil real
   function fitKioskToScreen() {
@@ -135,6 +141,13 @@
     els.state.textContent = label;
   }
 
+  function setPaused(paused) {
+    const on = Boolean(paused);
+    if (els.pauseIndicator) {
+      els.pauseIndicator.hidden = !on;
+    }
+  }
+
   function setNowPlaying(track, state) {
     if (track && track.titulo) {
       els.nowTitle.textContent = track.titulo;
@@ -175,8 +188,79 @@
     setState(data.state);
     setNowPlaying(data.current, data.state);
     renderQueue(data.queue || []);
+    if (data.paused != null) setPaused(data.paused);
     if (data.mpv_available === false) {
       els.hint.textContent = "Instala mpv (winget install shinchiro.mpv) y reinicia el servidor";
+    }
+  }
+
+  async function ensureBirthdaySongs() {
+    if (birthdaySongs) return birthdaySongs;
+    const res = await fetch("/api/birthday/songs");
+    const data = await res.json();
+    birthdaySongs = Array.isArray(data.songs) ? data.songs : [];
+    return birthdaySongs;
+  }
+
+  async function openBirthdayPicker() {
+    try {
+      const songs = await ensureBirthdaySongs();
+      els.birthdayGrid.innerHTML = "";
+      songs.forEach((song, index) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "birthday-card";
+        btn.dataset.id = song.id_youtube || "";
+
+        const thumb = document.createElement("div");
+        thumb.className = "birthday-thumb";
+        if (song.miniatura) {
+          thumb.style.backgroundImage = `url("${song.miniatura}")`;
+        }
+
+        const body = document.createElement("div");
+        body.className = "birthday-card-body";
+        const title = document.createElement("div");
+        title.className = "birthday-card-title";
+        title.textContent = song.titulo || `Opción ${index + 1}`;
+        body.appendChild(title);
+
+        btn.appendChild(thumb);
+        btn.appendChild(body);
+        btn.addEventListener("click", () => playBirthdaySong(song));
+        els.birthdayGrid.appendChild(btn);
+      });
+      els.birthdayModal.hidden = false;
+    } catch (_) {
+      showToast("No se pudo abrir cumpleaños", true);
+    }
+  }
+
+  function closeBirthdayPicker() {
+    els.birthdayModal.hidden = true;
+  }
+
+  async function playBirthdaySong(song) {
+    if (!song || birthdayBusy) return;
+    birthdayBusy = true;
+    try {
+      const res = await fetch("/api/birthday/play", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_youtube: song.id_youtube }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        showToast(data.detail || "No se pudo reproducir", true);
+        return;
+      }
+      applyQueuePayload(data);
+      closeBirthdayPicker();
+      showToast(`🎂 ${song.titulo || "Cumpleaños"}`);
+    } catch (_) {
+      showToast("Error al lanzar cumpleaños", true);
+    } finally {
+      birthdayBusy = false;
     }
   }
 
@@ -466,6 +550,8 @@
       if (data.type === "state") setState(data.state);
       if (data.type === "track") setNowPlaying(data.current, els.state.textContent);
       if (data.type === "queue") renderQueue(data.queue || []);
+      if (data.type === "pause") setPaused(data.paused);
+      if (data.type === "birthday_open") openBirthdayPicker();
       if (data.type === "error" && data.detail) {
         showToast(data.detail, true);
       }
@@ -497,6 +583,14 @@
     keyboardTarget = true;
     els.searchInput.classList.add("active");
   });
+  if (els.birthdayClose) {
+    els.birthdayClose.addEventListener("click", closeBirthdayPicker);
+  }
+  if (els.birthdayModal) {
+    els.birthdayModal.addEventListener("click", (e) => {
+      if (e.target === els.birthdayModal) closeBirthdayPicker();
+    });
+  }
 
   buildKeyboard();
   renderResults([]);

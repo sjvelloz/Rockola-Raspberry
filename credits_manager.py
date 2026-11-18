@@ -6,6 +6,8 @@ Pines BCM (debounce por sondeo):
   27  +1 crédito (módulo VCC/GND/OUT)
   22  saltar canción actual
   23  reiniciar la Pi (mantener pulsado REBOOT_HOLD_SECONDS)
+  24  pausar / reanudar
+  25  abrir selector de cumpleaños
 
 Módulos de botón VCC/GND/OUT: por defecto activos en alto (BUTTON_ACTIVE_HIGH).
 En Raspberry Pi OS Bookworm, RPi.GPIO.add_event_detect suele fallar
@@ -23,8 +25,10 @@ from typing import Callable
 from config import (
     BUTTON_ACTIVE_HIGH,
     COIN_CREDITS,
+    PIN_BIRTHDAY,
     PIN_COIN,
     PIN_CREDIT,
+    PIN_PAUSE,
     PIN_REBOOT,
     PIN_SKIP,
     REBOOT_HOLD_SECONDS,
@@ -49,16 +53,20 @@ except ImportError:
 
 
 class CreditsManager:
-    """Créditos + botones de servicio (skip / reboot)."""
+    """Créditos + botones de servicio (skip / pause / birthday / reboot)."""
 
     def __init__(
         self,
         on_credits_changed: Callable[[int], None] | None = None,
         on_skip: Callable[[], None] | None = None,
+        on_pause: Callable[[], None] | None = None,
+        on_birthday: Callable[[], None] | None = None,
         on_reboot: Callable[[], None] | None = None,
         coin_pin: int = PIN_COIN,
         credit_pin: int = PIN_CREDIT,
         skip_pin: int = PIN_SKIP,
+        pause_pin: int = PIN_PAUSE,
+        birthday_pin: int = PIN_BIRTHDAY,
         reboot_pin: int = PIN_REBOOT,
         debounce_ms: int = DEBOUNCE_MS,
         reboot_hold_seconds: float = REBOOT_HOLD_SECONDS,
@@ -67,11 +75,15 @@ class CreditsManager:
         self.creditos_disponibles: int = 0
         self.on_credits_changed = on_credits_changed
         self.on_skip = on_skip
+        self.on_pause = on_pause
+        self.on_birthday = on_birthday
         self.on_reboot = on_reboot or self._default_reboot
 
         self.coin_pin = coin_pin
         self.credit_pin = credit_pin
         self.skip_pin = skip_pin
+        self.pause_pin = pause_pin
+        self.birthday_pin = birthday_pin
         self.reboot_pin = reboot_pin
         self.debounce_ms = debounce_ms
         self.reboot_hold_seconds = reboot_hold_seconds
@@ -79,12 +91,23 @@ class CreditsManager:
         self._last_coin_ts = 0.0
         self._last_credit_ts = 0.0
         self._last_skip_ts = 0.0
+        self._last_pause_ts = 0.0
+        self._last_birthday_ts = 0.0
         self._started = False
         self._stop_poll = threading.Event()
         self._poll_thread: threading.Thread | None = None
         self._prev_levels: dict[int, int] = {}
         self._reboot_held_since: float | None = None
         self._buttons_active_high = bool(BUTTON_ACTIVE_HIGH)
+
+    def _button_pins(self) -> tuple[int, ...]:
+        return (
+            self.credit_pin,
+            self.skip_pin,
+            self.pause_pin,
+            self.birthday_pin,
+            self.reboot_pin,
+        )
 
     def start(self) -> None:
         if self._started:
@@ -101,9 +124,9 @@ class CreditsManager:
             # Monedero: pull-up (PC817 a GND). Botones módulo: pull-down si activo-alto.
             GPIO.setup(self.coin_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
             button_pud = GPIO.PUD_DOWN if self._buttons_active_high else GPIO.PUD_UP
-            for pin in (self.credit_pin, self.skip_pin, self.reboot_pin):
+            for pin in self._button_pins():
                 GPIO.setup(pin, GPIO.IN, pull_up_down=button_pud)
-            for pin in (self.coin_pin, self.credit_pin, self.skip_pin, self.reboot_pin):
+            for pin in (self.coin_pin, *self._button_pins()):
                 self._prev_levels[pin] = GPIO.input(pin)
         except Exception:
             logger.exception(
@@ -112,7 +135,6 @@ class CreditsManager:
             self._started = True
             return
 
-        # Bookworm: add_event_detect suele fallar → polling
         self._stop_poll.clear()
         self._poll_thread = threading.Thread(
             target=self._poll_loop,
@@ -123,11 +145,13 @@ class CreditsManager:
 
         self._started = True
         logger.info(
-            "GPIO por sondeo: coin=%d credit=%d skip=%d reboot=%d "
-            "(hold=%.1fs, botones_activo_alto=%s)",
+            "GPIO por sondeo: coin=%d credit=%d skip=%d pause=%d birthday=%d "
+            "reboot=%d (hold=%.1fs, botones_activo_alto=%s)",
             self.coin_pin,
             self.credit_pin,
             self.skip_pin,
+            self.pause_pin,
+            self.birthday_pin,
             self.reboot_pin,
             self.reboot_hold_seconds,
             self._buttons_active_high,
@@ -141,9 +165,7 @@ class CreditsManager:
             self._poll_thread.join(timeout=2)
         if GPIO_AVAILABLE:
             try:
-                GPIO.cleanup(
-                    [self.coin_pin, self.credit_pin, self.skip_pin, self.reboot_pin]
-                )
+                GPIO.cleanup([self.coin_pin, *self._button_pins()])
             except Exception:
                 logger.exception("Error en GPIO.cleanup")
         self._started = False
@@ -182,6 +204,8 @@ class CreditsManager:
         for pin, handler in (
             (self.credit_pin, self._fire_credit),
             (self.skip_pin, self._fire_skip),
+            (self.pause_pin, self._fire_pause),
+            (self.birthday_pin, self._fire_birthday),
         ):
             level = GPIO.input(pin)
             prev = self._prev_levels.get(
@@ -244,6 +268,26 @@ class CreditsManager:
                 self.on_skip()
             except Exception:
                 logger.exception("Error en on_skip")
+
+    def _fire_pause(self) -> None:
+        if not self._debounce_ok("_last_pause_ts", 350):
+            return
+        logger.info("Botón pause (GPIO %d)", self.pause_pin)
+        if self.on_pause:
+            try:
+                self.on_pause()
+            except Exception:
+                logger.exception("Error en on_pause")
+
+    def _fire_birthday(self) -> None:
+        if not self._debounce_ok("_last_birthday_ts", 500):
+            return
+        logger.info("Botón cumpleaños (GPIO %d)", self.birthday_pin)
+        if self.on_birthday:
+            try:
+                self.on_birthday()
+            except Exception:
+                logger.exception("Error en on_birthday")
 
     @staticmethod
     def _default_reboot() -> None:

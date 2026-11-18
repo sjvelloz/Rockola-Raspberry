@@ -21,6 +21,8 @@ PIN_COIN = 17          # Monedero CH-926 (PC817 → activo en bajo)
 PIN_CREDIT = 27        # +1 crédito (módulo VCC/GND/OUT)
 PIN_SKIP = 22          # Saltar canción actual
 PIN_REBOOT = 23        # Reiniciar Pi (mantener 2.5 s)
+PIN_PAUSE = 24         # Pausar / reanudar reproducción
+PIN_BIRTHDAY = 25      # Abrir selector de cumpleaños en pantalla
 
 # Módulos de botón con VCC/GND/OUT: en reposo OUT≈LOW, al pulsar OUT=HIGH.
 # El monedero (PC817) sigue activo en bajo.
@@ -32,6 +34,40 @@ COIN_CREDITS = int(os.environ.get("ROCKOLA_COIN_CREDITS", "3") or "3")
 # Volumen a tope: se modula desde el amplificador externo
 AMBIENT_VOLUME = 100
 USER_VOLUME = 100
+
+# Canciones de cumpleaños (botón GPIO → picker en UI → delante de la cola, sin ficha)
+BIRTHDAY_SONGS: list[dict[str, object]] = [
+    {
+        "id_youtube": "VaXPXwhOmbA",
+        "titulo": "Cumpleaños feliz — opción 1",
+        "miniatura": "https://i.ytimg.com/vi/VaXPXwhOmbA/hqdefault.jpg",
+        "duration_seconds": 180,
+    },
+    {
+        "id_youtube": "tznBgIGSi98",
+        "titulo": "Parchís — Cumpleaños feliz",
+        "miniatura": "https://i.ytimg.com/vi/tznBgIGSi98/hqdefault.jpg",
+        "duration_seconds": 180,
+    },
+    {
+        "id_youtube": "ixZO0j_LCj4",
+        "titulo": "Cumpleaños feliz — opción 3",
+        "miniatura": "https://i.ytimg.com/vi/ixZO0j_LCj4/hqdefault.jpg",
+        "duration_seconds": 180,
+    },
+    {
+        "id_youtube": "xvVUPGI8Kgo",
+        "titulo": "Cumpleaños feliz — opción 4",
+        "miniatura": "https://i.ytimg.com/vi/xvVUPGI8Kgo/hqdefault.jpg",
+        "duration_seconds": 180,
+    },
+    {
+        "id_youtube": "9uveUnMn9YE",
+        "titulo": "Cumpleaños feliz — opción 5",
+        "miniatura": "https://i.ytimg.com/vi/9uveUnMn9YE/hqdefault.jpg",
+        "duration_seconds": 180,
+    },
+]
 
 
 def get_ambient_playlist_url() -> str | None:

@@ -71,6 +71,7 @@
 
     <footer class="footer">
       <span class="footer-state">Estado: <strong id="player-state">IDLE</strong></span>
+      <span class="footer-pause" id="pause-indicator" hidden>⏸ PAUSA</span>
       <span class="footer-hint" id="status-hint">Inserta fichas para seleccionar canciones</span>
     </footer>
   </div>
@@ -79,6 +80,17 @@
   </div><!-- #scale-root -->
 
   <div id="toast" class="toast" hidden role="status" aria-live="assertive"></div>
+
+  <div id="birthday-modal" class="birthday-modal" hidden>
+    <div class="birthday-panel" role="dialog" aria-labelledby="birthday-title">
+      <div class="birthday-head">
+        <h2 id="birthday-title">🎂 Cumpleaños</h2>
+        <p class="birthday-sub">Elige una canción · suena ya · sin gastar ficha</p>
+        <button id="birthday-close" class="btn btn-ghost" type="button">Cerrar</button>
+      </div>
+      <div id="birthday-grid" class="birthday-grid"></div>
+    </div>
+  </div>
 
   <script src="/static/js/app.js"></script>
 </body>

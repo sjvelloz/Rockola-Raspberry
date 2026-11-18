@@ -31,6 +31,7 @@ import random
 from config import (
     AMBIENT_DIR,
     AMBIENT_VOLUME,
+    BIRTHDAY_SONGS,
     USER_VOLUME,
     get_ambient_playlist_url,
 )
@@ -174,12 +175,18 @@ class PlayerEngine:
         self._mpv_proc: subprocess.Popen[bytes] | None = None
         self._mpv_role: str | None = None  # "ambient" | "user"
         self._mpv_lock = threading.Lock()
+        self._paused = False
         self._ambient_index = 0
         self._ambient_playlist_ids: list[str] = []
         self._ambient_blocked: set[str] = set()
         self._ambient_playlist_loaded = False
         self._mpv_bin = _find_mpv()
         self._ytdlp_bin = _find_ytdlp()
+        if platform.system() == "Windows":
+            self._mpv_ipc = r"\\.\pipe\rockola-mpv"
+        else:
+            self._mpv_ipc = "/tmp/rockola-mpv.sock"
+        self.on_pause_changed: Callable[[bool], None] | None = None
         # PC (Windows): ventana. Raspberry Pi / Linux: fullscreen en la tele/HDMI.
         env_windowed = os.environ.get("ROCKOLA_WINDOWED", "").strip() in {"1", "true", "yes"}
         env_fs = os.environ.get("ROCKOLA_FULLSCREEN", "").strip() in {"1", "true", "yes"}
@@ -324,19 +331,102 @@ class PlayerEngine:
         Si hay cola de usuario, pasa a la siguiente; si no, vuelve a IDLE/ambiente.
         """
         logger.info("Skip solicitado (estado=%s role=%s)", self.state.value, self._mpv_role)
+        self._set_paused(False)
         self._wake.set()
         self._kill_mpv()
         return True
+
+    def toggle_pause(self) -> dict[str, Any]:
+        """Pausa / reanuda el mpv actual (ambiente o canción)."""
+        if self._mpv_proc is None or self._mpv_proc.poll() is not None:
+            self._set_paused(False)
+            return {"ok": False, "paused": False, "detail": "Nada reproduciéndose."}
+        want = not self._paused
+        ok = self._mpv_set_pause(want)
+        if ok:
+            self._set_paused(want)
+            logger.info("Pause → %s (role=%s)", want, self._mpv_role)
+        return {"ok": ok, "paused": self._paused, **self.status()}
+
+    def play_birthday(self, id_youtube: str) -> dict[str, Any]:
+        """
+        Inserta la canción de cumpleaños al frente (sin consumir ficha),
+        reencola la pista actual si había una, corta mpv y reproduce ya.
+        """
+        preset = next(
+            (s for s in BIRTHDAY_SONGS if str(s.get("id_youtube")) == id_youtube),
+            None,
+        )
+        if preset is None:
+            return {
+                "ok": False,
+                "error": "unknown_song",
+                "detail": "Canción de cumpleaños no válida.",
+            }
+
+        birthday = QueueItem(
+            id_youtube=str(preset["id_youtube"]),
+            titulo=str(preset["titulo"]),
+            miniatura=str(preset.get("miniatura") or ""),
+            duration_seconds=int(preset.get("duration_seconds") or 180),
+        )
+
+        interrupted: QueueItem | None = None
+        if self.state == PlayerState.PLAYING and self.current_track is not None:
+            # No reencolar si ya es la misma de cumpleaños
+            if self.current_track.id_youtube != birthday.id_youtube:
+                interrupted = self.current_track
+
+        rest = [
+            q
+            for q in self.get_queue_snapshot()
+            if q.id_youtube != birthday.id_youtube
+        ]
+        new_queue = [birthday]
+        if interrupted is not None:
+            new_queue.append(interrupted)
+        new_queue.extend(rest)
+
+        self._set_paused(False)
+        self._replace_queue(new_queue)
+        self._wake.set()
+        self._kill_mpv()
+        logger.info(
+            "Cumpleaños en cola al frente: %s (reanudará: %s)",
+            birthday.titulo,
+            interrupted.titulo if interrupted else "—",
+        )
+        return {"ok": True, **self.status()}
 
     def status(self) -> dict[str, Any]:
         return {
             "state": self.state.value,
             "current": self.current_track.to_dict() if self.current_track else None,
             "queue": [q.to_dict() for q in self.get_queue_snapshot()],
+            "paused": self._paused,
             "mpv_available": bool(self._mpv_bin),
             "windowed": self._windowed,
             "last_error": self.last_error,
         }
+
+    def _replace_queue(self, items: list[QueueItem]) -> list[QueueItem]:
+        with self.cola_canciones.mutex:
+            self.cola_canciones.queue.clear()
+            for item in items:
+                self.cola_canciones.queue.append(item)
+        snapshot = self.get_queue_snapshot()
+        self._emit_queue(snapshot)
+        return snapshot
+
+    def _set_paused(self, paused: bool) -> None:
+        if self._paused == paused:
+            return
+        self._paused = paused
+        if self.on_pause_changed:
+            try:
+                self.on_pause_changed(paused)
+            except Exception:
+                logger.exception("Error en on_pause_changed")
 
     # ------------------------------------------------------------------
     # Bucle principal
@@ -684,6 +774,7 @@ class PlayerEngine:
             f"--log-file={log_file}",
             # Cadena de backends de audio (PipeWire de la sesión gráfica)
             f"--ao={self._ao}",
+            f"--input-ipc-server={self._mpv_ipc}",
         ]
         if self._audio_device:
             cmd.append(f"--audio-device={self._audio_device}")
@@ -786,6 +877,11 @@ class PlayerEngine:
             return False
 
         role = "user" if user_track else "ambient"
+        if platform.system() != "Windows":
+            try:
+                Path(self._mpv_ipc).unlink(missing_ok=True)
+            except OSError:
+                pass
         cmd = self._mpv_cmd(
             media,
             volume=volume,
@@ -834,6 +930,7 @@ class PlayerEngine:
                 self._mpv_proc = subprocess.Popen(cmd, **popen_kwargs)
                 self._mpv_role = role
                 proc = self._mpv_proc
+                self._paused = False
         except OSError:
             logger.exception("No se pudo lanzar mpv")
             return False
@@ -892,7 +989,35 @@ class PlayerEngine:
             proc = self._mpv_proc
             self._mpv_proc = None
             self._mpv_role = None
+        self._paused = False
         self._terminate_proc(proc)
+
+    def _mpv_set_pause(self, paused: bool) -> bool:
+        """Envía set pause a mpv vía IPC. Devuelve True si el comando se envió."""
+        payload = (
+            '{"command":["set_property","pause",'
+            + ("true" if paused else "false")
+            + "]}\n"
+        )
+        try:
+            if platform.system() == "Windows":
+                # Named pipe: abrir, escribir, cerrar
+                with open(self._mpv_ipc, "r+b", buffering=0) as pipe:
+                    pipe.write(payload.encode("utf-8"))
+            else:
+                import socket
+
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                try:
+                    sock.settimeout(0.8)
+                    sock.connect(self._mpv_ipc)
+                    sock.sendall(payload.encode("utf-8"))
+                finally:
+                    sock.close()
+            return True
+        except OSError:
+            logger.exception("No se pudo hablar con mpv IPC (%s)", self._mpv_ipc)
+            return False
 
     @staticmethod
     def _terminate_proc(proc: subprocess.Popen[bytes] | None) -> None:

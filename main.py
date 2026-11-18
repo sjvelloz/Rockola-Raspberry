@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from config import BIRTHDAY_SONGS
 from credits_manager import CreditsManager
 from database import get_top_canciones, init_db
 from player_engine import PlayerEngine, PlayerState, QueueItem
@@ -40,6 +41,10 @@ class EnqueueRequest(BaseModel):
     titulo: str
     miniatura: str = ""
     duration_seconds: int
+
+
+class BirthdayPlayRequest(BaseModel):
+    id_youtube: str
 
 
 class ConnectionManager:
@@ -114,6 +119,14 @@ def _notify_player_error(message: str) -> None:
     _broadcast_threadsafe({"type": "error", "detail": message})
 
 
+def _notify_pause_changed(paused: bool) -> None:
+    _broadcast_threadsafe({"type": "pause", "paused": paused})
+
+
+def _notify_birthday_open() -> None:
+    _broadcast_threadsafe({"type": "birthday_open"})
+
+
 credits = CreditsManager(on_credits_changed=_notify_credits_changed)
 player = PlayerEngine(
     credits_manager=credits,
@@ -122,8 +135,11 @@ player = PlayerEngine(
     on_track_changed=_notify_track_changed,
     on_error=_notify_player_error,
 )
-# Botones físicos: skip (GPIO 22) y reboot hold (GPIO 23) → ver credits_manager
+player.on_pause_changed = _notify_pause_changed
+# Botones físicos → ver credits_manager / INSTALACION_PI.md
 credits.on_skip = player.skip_current
+credits.on_pause = player.toggle_pause
+credits.on_birthday = _notify_birthday_open
 
 
 @asynccontextmanager
@@ -178,6 +194,34 @@ async def api_skip() -> dict[str, Any]:
     """Salta la pista actual (equivalente al botón GPIO 22)."""
     player.skip_current()
     return {"ok": True, **player.status()}
+
+
+@app.post("/api/player/pause")
+async def api_pause() -> dict[str, Any]:
+    """Pausa / reanuda (equivalente al botón GPIO 24)."""
+    return player.toggle_pause()
+
+
+@app.get("/api/birthday/songs")
+async def api_birthday_songs() -> dict[str, Any]:
+    """Lista fija de canciones de cumpleaños para el picker táctil."""
+    return {"songs": BIRTHDAY_SONGS}
+
+
+@app.post("/api/birthday/play")
+async def api_birthday_play(body: BirthdayPlayRequest) -> dict[str, Any]:
+    """
+    Reproduce cumpleaños ya (sin ficha): delante de la cola.
+    Si había canción sonando, se reencola justo detrás y sigue después.
+    """
+    return player.play_birthday(body.id_youtube)
+
+
+@app.post("/api/birthday/open")
+async def api_birthday_open() -> dict[str, bool]:
+    """Abre el picker en la UI (equivalente al botón GPIO 25)."""
+    _notify_birthday_open()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +292,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             "state": status["state"],
             "current": status["current"],
             "queue": status["queue"],
+            "paused": status.get("paused", False),
         }
     )
     try:
