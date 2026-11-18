@@ -11,13 +11,22 @@ LOG=/tmp/rockola-session.log
 exec >>"$LOG" 2>&1
 echo "=== rockola-session $(date -Iseconds) ==="
 
-# Cargar env si existe
+# Cargar env si existe (valores con espacios van entre comillas)
 if [ -f "$ROOT/rockola.env" ]; then
-  # shellcheck disable=SC1091
-  set -a
-  # shellcheck disable=SC1090
-  source <(grep -E '^[A-Z0-9_]+=' "$ROOT/rockola.env" | sed 's/\r$//')
-  set +a
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      ''|\#*) continue ;;
+      *=*)
+        key="${line%%=*}"
+        val="${line#*=}"
+        case "$key" in
+          *[!A-Z0-9_]*) continue ;;
+        esac
+        export "$key=$val"
+        ;;
+    esac
+  done < "$ROOT/rockola.env"
 fi
 
 UI_OUT="${ROCKOLA_UI_OUTPUT:-HDMI-A-2}"
