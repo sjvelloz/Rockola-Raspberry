@@ -16,11 +16,15 @@ ROOT = Path(__file__).resolve().parent
 AMBIENT_DIR = ROOT / "media" / "ambient"
 PLAYLIST_FILE = AMBIENT_DIR / "playlist.url"
 
-# Pines BCM (botones a GND, pull-up interno)
-PIN_COIN = 17          # Monedero CH-926
-PIN_CREDIT = 27        # +1 crédito (personal / compensación)
-PIN_SKIP = 22          # Saltar canción actual (personal)
+# Pines BCM
+PIN_COIN = 17          # Monedero CH-926 (PC817 → activo en bajo)
+PIN_CREDIT = 27        # +1 crédito (módulo VCC/GND/OUT)
+PIN_SKIP = 22          # Saltar canción actual
 PIN_REBOOT = 23        # Reiniciar Pi (mantener 2.5 s)
+
+# Módulos de botón con VCC/GND/OUT: en reposo OUT≈LOW, al pulsar OUT=HIGH.
+# El monedero (PC817) sigue activo en bajo.
+BUTTON_ACTIVE_HIGH = True
 
 REBOOT_HOLD_SECONDS = 2.5
 # Créditos por pulso del monedero CH-926

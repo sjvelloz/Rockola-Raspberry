@@ -96,6 +96,17 @@ Detalle de un botón (los 3 iguales):
    GND ───────────────┴──── otro pin del botón
 ```
 
+### Módulos de botón con VCC / GND / OUT
+Muchos pulsadores de protoboard traen 3 pines. Cableado:
+
+| Pin del módulo | Conexión |
+|----------------|----------|
+| **VCC** | **3V3** de la Pi (pin 1 o 17), **no 5V** |
+| **GND** | riel GND común |
+| **OUT** | GPIO 27 / 22 / 23 según el botón |
+
+En reposo OUT está en bajo; al pulsar sale en alto. El software usa `BUTTON_ACTIVE_HIGH=True` para eso (si usas pulsadores de 2 patillas a GND, cámbialo a `False` en `config.py`).
+
 ### Para la máquina definitiva
 - Los mismos 3 botones en el frontal de la caja.
 - Cables soldados o conectores JST/Dupont bien sujetos.

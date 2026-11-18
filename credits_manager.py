@@ -1,12 +1,13 @@
 """
 Hardware GPIO: monedero + botones de servicio (Raspberry Pi 4).
 
-Pines BCM (botón/opto a GND, pull-up interno, debounce):
-  17  monedero CH-926 (PC817)
-  27  +1 crédito (personal / compensación de ficha)
+Pines BCM (debounce por sondeo):
+  17  monedero CH-926 (PC817) — activo en bajo
+  27  +1 crédito (módulo VCC/GND/OUT)
   22  saltar canción actual
   23  reiniciar la Pi (mantener pulsado REBOOT_HOLD_SECONDS)
 
+Módulos de botón VCC/GND/OUT: por defecto activos en alto (BUTTON_ACTIVE_HIGH).
 En Raspberry Pi OS Bookworm, RPi.GPIO.add_event_detect suele fallar
 ("Failed to add edge detection"). Usamos sondeo (polling), más fiable.
 """
@@ -20,6 +21,7 @@ import time
 from typing import Callable
 
 from config import (
+    BUTTON_ACTIVE_HIGH,
     COIN_CREDITS,
     PIN_COIN,
     PIN_CREDIT,
@@ -81,7 +83,8 @@ class CreditsManager:
         self._stop_poll = threading.Event()
         self._poll_thread: threading.Thread | None = None
         self._prev_levels: dict[int, int] = {}
-        self._reboot_low_since: float | None = None
+        self._reboot_held_since: float | None = None
+        self._buttons_active_high = bool(BUTTON_ACTIVE_HIGH)
 
     def start(self) -> None:
         if self._started:
@@ -95,8 +98,12 @@ class CreditsManager:
         try:
             GPIO.setmode(GPIO.BCM)
             GPIO.setwarnings(False)
+            # Monedero: pull-up (PC817 a GND). Botones módulo: pull-down si activo-alto.
+            GPIO.setup(self.coin_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            button_pud = GPIO.PUD_DOWN if self._buttons_active_high else GPIO.PUD_UP
+            for pin in (self.credit_pin, self.skip_pin, self.reboot_pin):
+                GPIO.setup(pin, GPIO.IN, pull_up_down=button_pud)
             for pin in (self.coin_pin, self.credit_pin, self.skip_pin, self.reboot_pin):
-                GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
                 self._prev_levels[pin] = GPIO.input(pin)
         except Exception:
             logger.exception(
@@ -116,12 +123,14 @@ class CreditsManager:
 
         self._started = True
         logger.info(
-            "GPIO por sondeo: coin=%d credit=%d skip=%d reboot=%d (hold=%.1fs)",
+            "GPIO por sondeo: coin=%d credit=%d skip=%d reboot=%d "
+            "(hold=%.1fs, botones_activo_alto=%s)",
             self.coin_pin,
             self.credit_pin,
             self.skip_pin,
             self.reboot_pin,
             self.reboot_hold_seconds,
+            self._buttons_active_high,
         )
 
     def stop(self) -> None:
@@ -149,40 +158,58 @@ class CreditsManager:
                 logger.exception("Error en sondeo GPIO")
             time.sleep(POLL_INTERVAL_S)
 
+    def _edge_pressed(self, prev: int, level: int, *, active_high: bool) -> bool:
+        if active_high:
+            return prev == GPIO.LOW and level == GPIO.HIGH
+        return prev == GPIO.HIGH and level == GPIO.LOW
+
+    def _is_held(self, level: int, *, active_high: bool) -> bool:
+        if active_high:
+            return level == GPIO.HIGH
+        return level == GPIO.LOW
+
     def _poll_once(self) -> None:
         assert GPIO is not None
         now = time.monotonic()
 
+        # Monedero siempre activo en bajo (PC817 a GND).
+        coin_level = GPIO.input(self.coin_pin)
+        coin_prev = self._prev_levels.get(self.coin_pin, GPIO.HIGH)
+        if self._edge_pressed(coin_prev, coin_level, active_high=False):
+            self._fire_coin()
+        self._prev_levels[self.coin_pin] = coin_level
+
         for pin, handler in (
-            (self.coin_pin, self._fire_coin),
             (self.credit_pin, self._fire_credit),
             (self.skip_pin, self._fire_skip),
         ):
             level = GPIO.input(pin)
-            prev = self._prev_levels.get(pin, GPIO.HIGH)
-            if prev == GPIO.HIGH and level == GPIO.LOW:
+            prev = self._prev_levels.get(
+                pin, GPIO.LOW if self._buttons_active_high else GPIO.HIGH
+            )
+            if self._edge_pressed(prev, level, active_high=self._buttons_active_high):
                 handler()
             self._prev_levels[pin] = level
 
         reboot_level = GPIO.input(self.reboot_pin)
-        if reboot_level == GPIO.LOW:
-            if self._reboot_low_since is None:
-                self._reboot_low_since = now
+        if self._is_held(reboot_level, active_high=self._buttons_active_high):
+            if self._reboot_held_since is None:
+                self._reboot_held_since = now
                 logger.info(
                     "Botón reboot pulsado: mantén %.1fs…",
                     self.reboot_hold_seconds,
                 )
-            elif now - self._reboot_low_since >= self.reboot_hold_seconds:
-                self._reboot_low_since = None
+            elif now - self._reboot_held_since >= self.reboot_hold_seconds:
+                self._reboot_held_since = None
                 logger.warning("Reiniciando Raspberry Pi…")
                 try:
                     self.on_reboot()
                 except Exception:
                     logger.exception("Error en on_reboot")
         else:
-            if self._reboot_low_since is not None:
+            if self._reboot_held_since is not None:
                 logger.info("Reboot cancelado (soltó el botón).")
-            self._reboot_low_since = None
+            self._reboot_held_since = None
         self._prev_levels[self.reboot_pin] = reboot_level
 
     def _debounce_ok(self, attr: str, min_ms: float | None = None) -> bool:
