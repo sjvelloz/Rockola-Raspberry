@@ -187,6 +187,7 @@ class PlayerEngine:
         # Pantalla de vídeo (tele / HDMI). Ver scripts/configure-displays.sh
         self._fs_screen = os.environ.get("ROCKOLA_MPV_FS_SCREEN", "").strip()
         self._video_output = os.environ.get("ROCKOLA_VIDEO_OUTPUT", "").strip()
+        self._ui_output = os.environ.get("ROCKOLA_UI_OUTPUT", "").strip()
         # Geometría X11 de la tele (p.ej. 1920x1080+1920+0). Ver configure-displays.sh
         self._video_geometry = os.environ.get(
             "ROCKOLA_VIDEO_GEOMETRY", "1920x1080+1920+0"
@@ -196,6 +197,10 @@ class PlayerEngine:
         self._drm_connector = os.environ.get("ROCKOLA_MPV_DRM_CONNECTOR", "").strip()
         # En Pi/labwc, SDL ignora el monitor: forzar X11 vía XWayland
         self._video_vo = os.environ.get("ROCKOLA_MPV_VO", "x11").strip() or "x11"
+        # Apagar la tele en IDLE para que no se vea el escritorio
+        self._blank_tv_idle = os.environ.get(
+            "ROCKOLA_BLANK_TV_WHEN_IDLE", "1"
+        ).strip().lower() not in {"0", "false", "no", "off"}
         # Audio: pipewire/pulse/alsa. Ej: ROCKOLA_AO=alsa  o  ROCKOLA_AUDIO_DEVICE=...
         self._ao = os.environ.get("ROCKOLA_AO", "pipewire,pulse,alsa").strip()
         self._audio_device = os.environ.get("ROCKOLA_AUDIO_DEVICE", "").strip()
@@ -231,6 +236,8 @@ class PlayerEngine:
             logger.info("yt-dlp para mpv: %s", self._ytdlp_bin)
 
         self.ambient_dir.mkdir(parents=True, exist_ok=True)
+        # Tele apagada al arrancar (no mostrar escritorio / UI en la TV)
+        self._set_tv_enabled(False)
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._run_loop,
@@ -340,13 +347,19 @@ class PlayerEngine:
             if self.cola_canciones.empty():
                 self._set_current(None)
                 self._set_state(PlayerState.IDLE)
+                self._set_tv_enabled(False)
                 self._play_ambient()
             else:
                 item = self.cola_canciones.get()
                 self._emit_queue(self.get_queue_snapshot())
                 self._set_state(PlayerState.PLAYING)
                 self._set_current(item)
-                self._play_user_track(item)
+                self._set_tv_enabled(True)
+                try:
+                    self._play_user_track(item)
+                finally:
+                    if self.cola_canciones.empty():
+                        self._set_tv_enabled(False)
 
     def _ensure_ambient_playlist(self) -> None:
         if self._ambient_playlist_loaded:
@@ -382,6 +395,40 @@ class PlayerEngine:
                 self._wake.clear()
                 if not self.cola_canciones.empty():
                     break
+
+    def _set_tv_enabled(self, enabled: bool) -> None:
+        """Enciende/apaga la salida de la tele (no la táctil)."""
+        if not self._blank_tv_idle:
+            return
+        if platform.system() == "Windows":
+            return
+        out = self._video_output
+        if not out:
+            return
+        if self._ui_output and out == self._ui_output:
+            # Misma pantalla que la UI: no apagar
+            return
+        action = "on" if enabled else "off"
+        env = os.environ.copy()
+        env.setdefault("XDG_RUNTIME_DIR", "/run/user/1000")
+        env.setdefault("WAYLAND_DISPLAY", "wayland-0")
+        cmd = ["wlr-randr", "--output", out, f"--{action}"]
+        if enabled:
+            cmd.extend(["--pos", "1920,0"])
+        try:
+            subprocess.run(
+                cmd,
+                env=env,
+                timeout=8,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.info("Tele %s → %s", out, action)
+            if enabled:
+                time.sleep(0.8)  # dejar que XWayland vea el monitor
+        except (OSError, subprocess.TimeoutExpired):
+            logger.warning("No se pudo cambiar salida tele %s", out)
 
     def _play_ambient(self) -> None:
         """
