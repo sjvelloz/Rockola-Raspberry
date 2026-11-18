@@ -397,8 +397,14 @@ class PlayerEngine:
                     break
 
     def _set_tv_enabled(self, enabled: bool) -> None:
-        """Enciende/apaga la salida de la tele (no la táctil)."""
-        if not self._blank_tv_idle:
+        """
+        Gestiona la tele:
+          - soft (default): tele siempre ON (audio HDMI) + fondo negro en idle
+          - hard: apaga la salida en idle (puede cortar audio HDMI)
+          - off: no tocar
+        """
+        mode = os.environ.get("ROCKOLA_BLANK_TV_WHEN_IDLE", "soft").strip().lower()
+        if mode in {"0", "false", "no", "off"}:
             return
         if platform.system() == "Windows":
             return
@@ -406,29 +412,123 @@ class PlayerEngine:
         if not out:
             return
         if self._ui_output and out == self._ui_output:
-            # Misma pantalla que la UI: no apagar
             return
-        action = "on" if enabled else "off"
+
         env = os.environ.copy()
         env.setdefault("XDG_RUNTIME_DIR", "/run/user/1000")
         env.setdefault("WAYLAND_DISPLAY", "wayland-0")
-        cmd = ["wlr-randr", "--output", out, f"--{action}"]
-        if enabled:
-            cmd.extend(["--pos", "1920,0"])
+
         try:
+            if mode == "hard":
+                action = "on" if enabled else "off"
+                cmd = ["wlr-randr", "--output", out, f"--{action}"]
+                if enabled:
+                    cmd.extend(["--pos", "1920,0"])
+                subprocess.run(
+                    cmd,
+                    env=env,
+                    timeout=8,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                logger.info("Tele %s → %s (hard)", out, action)
+                if enabled:
+                    time.sleep(0.8)
+                return
+
+            # soft: mantener tele encendida (audio HDMI) y cubrir con negro en idle
             subprocess.run(
-                cmd,
+                ["wlr-randr", "--output", out, "--on", "--pos", "1920,0"],
                 env=env,
                 timeout=8,
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            logger.info("Tele %s → %s", out, action)
             if enabled:
-                time.sleep(0.8)  # dejar que XWayland vea el monitor
+                # Reproducción: quitar fondo negro para que se vea mpv
+                subprocess.run(
+                    ["pkill", "-x", "swaybg"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                time.sleep(0.4)
+                logger.info("Tele %s lista para vídeo (soft)", out)
+            else:
+                # Idle: negro, sin escritorio visible
+                subprocess.run(
+                    ["pkill", "-x", "swaybg"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                subprocess.Popen(
+                    ["swaybg", "-o", out, "-c", "#000000"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                logger.info("Tele %s en negro idle (soft, audio OK)", out)
+            self._ensure_max_volume()
         except (OSError, subprocess.TimeoutExpired):
-            logger.warning("No se pudo cambiar salida tele %s", out)
+            logger.warning("No se pudo gestionar salida tele %s", out)
+
+    def _ensure_max_volume(self) -> None:
+        """Volumen del sistema a tope (se modula en el amplificador)."""
+        if platform.system() == "Windows":
+            return
+        env = os.environ.copy()
+        env.setdefault("XDG_RUNTIME_DIR", "/run/user/1000")
+        try:
+            subprocess.run(
+                ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "1.0"],
+                env=env,
+                timeout=5,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            # Preferir sink HDMI si existe
+            prefer = os.environ.get("ROCKOLA_AUDIO_SINK", "hdmi").strip().lower()
+            if prefer in {"hdmi", "1", "tv"}:
+                probe = subprocess.run(
+                    ["wpctl", "status"],
+                    env=env,
+                    timeout=5,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                for line in (probe.stdout or "").splitlines():
+                    if "HDMI" in line and "vol:" in line:
+                        # "│      45. Built-in Audio Digital Stereo (HDMI) [vol: 1.00]"
+                        parts = line.replace("│", " ").replace("*", " ").split()
+                        for p in parts:
+                            if p.endswith(".") and p[:-1].isdigit():
+                                sid = p[:-1]
+                                subprocess.run(
+                                    ["wpctl", "set-default", sid],
+                                    env=env,
+                                    timeout=5,
+                                    check=False,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                )
+                                subprocess.run(
+                                    ["wpctl", "set-volume", sid, "1.0"],
+                                    env=env,
+                                    timeout=5,
+                                    check=False,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                )
+                                break
+                        break
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     def _play_ambient(self) -> None:
         """
