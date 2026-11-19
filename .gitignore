@@ -7,3 +7,4 @@ __pycache__/
 *.log
 logs/
 rockola.env
+esp32/rockola_buttons/wifi_secrets.h

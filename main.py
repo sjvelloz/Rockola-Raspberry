@@ -202,6 +202,22 @@ async def api_pause() -> dict[str, Any]:
     return player.toggle_pause()
 
 
+@app.post("/api/system/reboot")
+async def api_reboot() -> dict[str, Any]:
+    """Reinicia la Pi (equivalente al hold del botón GPIO 23 / mando ESP32)."""
+    import subprocess
+    import threading
+
+    def _reboot() -> None:
+        import time
+
+        time.sleep(0.4)
+        subprocess.Popen(["sudo", "-n", "reboot"], start_new_session=True)
+
+    threading.Thread(target=_reboot, daemon=True).start()
+    return {"ok": True, "detail": "Reinicio solicitado"}
+
+
 @app.get("/api/birthday/songs")
 async def api_birthday_songs() -> dict[str, Any]:
     """Lista fija de canciones de cumpleaños para el picker táctil."""
