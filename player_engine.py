@@ -576,7 +576,7 @@ class PlayerEngine:
 
             sink_vol = f"{max(0.0, min(float(SINK_VOLUME), 2.0)):.2f}"
         except Exception:
-            sink_vol = "1.50"
+            sink_vol = "1.00"
         try:
             subprocess.run(
                 ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", sink_vol],
