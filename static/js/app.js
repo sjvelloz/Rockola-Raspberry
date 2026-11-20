@@ -13,6 +13,7 @@
     creditsPanel: document.getElementById("credits-panel"),
     searchInput: document.getElementById("search-input"),
     searchBtn: document.getElementById("search-btn"),
+    clearSearchBtn: document.getElementById("clear-search-btn"),
     topBtn: document.getElementById("top-btn"),
     results: document.getElementById("results"),
     resultsPane: document.querySelector(".results-pane"),
@@ -38,18 +39,19 @@
   let birthdaySongs = null;
   let birthdayBusy = false;
 
-  // Escala el layout 1280×800 para llenar la pantalla táctil real
+  // Llena la pantalla real (sin transform): el scale() rompía el scroll táctil
+  // y dejaba bandas laterales. Vertical y horizontal usan todo el viewport.
   function fitKioskToScreen() {
-    const root = document.getElementById("scale-root");
     const kiosk = document.getElementById("kiosk");
-    if (!root || !kiosk) return;
-    const sw = window.innerWidth || 1280;
-    const sh = window.innerHeight || 800;
-    const scale = Math.min(sw / 1280, sh / 800);
-    const ox = Math.max(0, (sw - 1280 * scale) / 2);
-    const oy = Math.max(0, (sh - 800 * scale) / 2);
-    kiosk.style.transformOrigin = "top left";
-    kiosk.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
+    if (!kiosk) return;
+    kiosk.style.transform = "";
+    kiosk.style.width = "100%";
+    kiosk.style.height = "100%";
+  }
+
+  function clearSearchText() {
+    els.searchInput.value = "";
+    els.searchInput.classList.add("active");
   }
 
   document.body.classList.add("lite");
@@ -351,6 +353,7 @@
       }
       if (data.queue) renderQueue(data.queue);
       if (data.state) setState(data.state);
+      clearSearchText();
       showToast(`Añadida: ${item.titulo}`);
     } catch (_) {
       showToast("Error al añadir a la cola", true);
@@ -578,6 +581,9 @@
   // ---------------------------------------------------------------------------
 
   els.searchBtn.addEventListener("click", doSearch);
+  if (els.clearSearchBtn) {
+    els.clearSearchBtn.addEventListener("click", clearSearchText);
+  }
   els.topBtn.addEventListener("click", loadTop);
   els.searchInput.addEventListener("click", () => {
     keyboardTarget = true;
