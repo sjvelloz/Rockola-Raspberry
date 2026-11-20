@@ -226,6 +226,13 @@ input {
   box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
 }
 
+.btn-clear {
+  min-width: 96px;
+  border-color: #8b93b3;
+  color: #d7dcf0;
+  background: rgba(20, 18, 38, 0.9);
+}
+
 .btn-hot {
   min-width: 210px;
   border-color: #ff00e5;
@@ -266,12 +273,15 @@ input {
 
 .results-grid {
   flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   padding: 8px;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   align-content: start;
   scrollbar-width: thin;
   scrollbar-color: hsla(var(--hue), 90%, 55%, 0.4) transparent;

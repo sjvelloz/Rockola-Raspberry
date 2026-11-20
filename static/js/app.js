@@ -13,6 +13,7 @@
     creditsPanel: document.getElementById("credits-panel"),
     searchInput: document.getElementById("search-input"),
     searchBtn: document.getElementById("search-btn"),
+    clearSearchBtn: document.getElementById("clear-search-btn"),
     topBtn: document.getElementById("top-btn"),
     results: document.getElementById("results"),
     resultsPane: document.querySelector(".results-pane"),
@@ -50,6 +51,38 @@
     const oy = Math.max(0, (sh - 800 * scale) / 2);
     kiosk.style.transformOrigin = "top left";
     kiosk.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
+  }
+
+  function clearSearchText() {
+    els.searchInput.value = "";
+    els.searchInput.classList.add("active");
+  }
+
+  // Scroll táctil manual: el scale() del kiosk rompe el pan nativo en Chromium
+  function enableTouchScroll(el) {
+    if (!el || el.dataset.touchScroll === "1") return;
+    el.dataset.touchScroll = "1";
+    let startY = 0;
+    let startScroll = 0;
+    el.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!e.touches.length) return;
+        startY = e.touches[0].clientY;
+        startScroll = el.scrollTop;
+      },
+      { passive: true }
+    );
+    el.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!e.touches.length) return;
+        const dy = startY - e.touches[0].clientY;
+        el.scrollTop = startScroll + dy;
+        e.preventDefault();
+      },
+      { passive: false }
+    );
   }
 
   document.body.classList.add("lite");
@@ -351,6 +384,7 @@
       }
       if (data.queue) renderQueue(data.queue);
       if (data.state) setState(data.state);
+      clearSearchText();
       showToast(`Añadida: ${item.titulo}`);
     } catch (_) {
       showToast("Error al añadir a la cola", true);
@@ -578,6 +612,9 @@
   // ---------------------------------------------------------------------------
 
   els.searchBtn.addEventListener("click", doSearch);
+  if (els.clearSearchBtn) {
+    els.clearSearchBtn.addEventListener("click", clearSearchText);
+  }
   els.topBtn.addEventListener("click", loadTop);
   els.searchInput.addEventListener("click", () => {
     keyboardTarget = true;
@@ -594,6 +631,8 @@
 
   buildKeyboard();
   renderResults([]);
+  enableTouchScroll(els.results);
+  if (els.queueList) enableTouchScroll(els.queueList);
   refreshCredits();
   refreshQueue();
   connectSocket();
