@@ -92,21 +92,18 @@ if command -v wpctl >/dev/null 2>&1; then
   wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true
   PREFER_AUDIO="$(echo "${ROCKOLA_AUDIO_SINK:-aux}" | tr '[:upper:]' '[:lower:]')"
   # Pi OS: jack = "Built-in Audio Stereo"; HDMI = "... (HDMI)"
-  SINK_ID="$(wpctl status 2>/dev/null | awk -v prefer="$PREFER_AUDIO" '
-    /vol:/ {
-      line=$0
-      low=tolower(line)
-      is_hdmi = (low ~ /hdmi/)
-      is_aux = (!is_hdmi) && (low ~ /headphone|analog|av jack|built-in audio stereo/)
-      keep=0
-      if (prefer=="hdmi" || prefer=="tv" || prefer=="1") keep=is_hdmi
-      else if (prefer=="aux" || prefer=="headphones" || prefer=="analog" || prefer=="jack" || prefer=="3.5" || prefer=="headphone") keep=is_aux
-      else keep=(index(low, prefer)>0)
-      if (!keep) next
-      gsub(/[^0-9. ]/," ",line); split(line,a," ");
-      for (i in a) if (a[i] ~ /^[0-9]+$/) { print a[i]; exit }
-    }
-  ')"
+  SINKS_BLOCK="$(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p')"
+  case "$PREFER_AUDIO" in
+    hdmi|tv|1)
+      SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -i HDMI | head -1 | grep -oE '[0-9]+' | head -1)"
+      ;;
+    aux|headphones|analog|jack|3.5|headphone)
+      SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -vi HDMI | head -1 | grep -oE '[0-9]+' | head -1)"
+      ;;
+    *)
+      SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -i "$PREFER_AUDIO" | head -1 | grep -oE '[0-9]+' | head -1)"
+      ;;
+  esac
   if [ -n "${SINK_ID:-}" ]; then
     wpctl set-default "$SINK_ID" 2>/dev/null || true
     wpctl set-volume "$SINK_ID" 1.0 2>/dev/null || true

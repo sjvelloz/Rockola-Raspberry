@@ -61,17 +61,8 @@ export XDG_RUNTIME_DIR=/run/user/1000
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 echo '=== sinks before ==='
 wpctl status | sed -n '/Sinks/,/Sources/p'
-SINK_ID=$(wpctl status | awk '
-  /vol:/ {
-    line=$0
-    low=tolower(line)
-    is_hdmi = (low ~ /hdmi/)
-    is_aux = (!is_hdmi) && (low ~ /headphone|analog|av jack|built-in audio stereo/)
-    if (!is_aux) next
-    gsub(/[^0-9. ]/," ",line); split(line,a," ");
-    for (i in a) if (a[i] ~ /^[0-9]+$/) { print a[i]; exit }
-  }
-')
+# Jack 3.5 = Built-in Audio Stereo; HDMI = ... (HDMI)
+SINK_ID=$(wpctl status | sed -n '/Sinks:/,/Sources:/p' | grep 'vol:' | grep -vi HDMI | head -1 | grep -oE '[0-9]+' | head -1)
 echo "aux_sink=$SINK_ID"
 if [ -n "$SINK_ID" ]; then
   wpctl set-default "$SINK_ID"
@@ -79,6 +70,7 @@ if [ -n "$SINK_ID" ]; then
   echo "OK default → aux $SINK_ID"
 else
   echo 'WARN: no analog/headphones sink found'
+  wpctl status | sed -n '/Sinks:/,/Sources:/p'
 fi
 echo '=== sinks after ==='
 wpctl status | sed -n '/Sinks/,/Sources/p'

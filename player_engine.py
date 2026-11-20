@@ -18,7 +18,6 @@ import os
 import platform
 import queue
 import random
-import re
 import shutil
 import subprocess
 import sys
@@ -600,22 +599,33 @@ class PlayerEngine:
                 capture_output=True,
                 text=True,
             )
-            chosen_id: str | None = None
+            # Solo mirar el bloque Sinks (wpctl status lista varias secciones)
+            sink_lines: list[str] = []
+            in_sinks = False
             for line in (probe.stdout or "").splitlines():
+                stripped = line.strip()
+                if stripped.startswith("Sinks:"):
+                    in_sinks = True
+                    continue
+                if in_sinks and (
+                    stripped.startswith("Sources:")
+                    or stripped.startswith("Filters:")
+                    or stripped.startswith("Streams:")
+                ):
+                    break
+                if in_sinks:
+                    sink_lines.append(line)
+
+            chosen_id: str | None = None
+            for line in sink_lines:
                 if "vol:" not in line:
                     continue
                 low = line.lower()
                 is_hdmi = "hdmi" in low
-                # En Pi OS el jack suele ser "Built-in Audio Stereo" (sin HDMI).
-                is_aux = (not is_hdmi) and (
-                    "headphone" in low
-                    or "analog" in low
-                    or "av jack" in low
-                    or "built-in audio stereo" in low
-                )
+                # Jack 3.5 en Pi OS: "Built-in Audio Stereo" (sin HDMI en el nombre).
                 if want_hdmi and not is_hdmi:
                     continue
-                if want_aux and not is_aux:
+                if want_aux and is_hdmi:
                     continue
                 if not want_hdmi and not want_aux:
                     if prefer.lower() not in low:
