@@ -36,6 +36,8 @@ for _ in $(seq 1 90); do
 done
 
 mkdir -p "$PROFILE"
+# Evitar “Opening in existing browser session” / ventana invisible tras kills
+rm -f "$PROFILE"/SingletonLock "$PROFILE"/SingletonSocket "$PROFILE"/SingletonCookie 2>/dev/null || true
 sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PROFILE/Default/Preferences" 2>/dev/null || true
 sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$PROFILE/Default/Preferences" 2>/dev/null || true
 

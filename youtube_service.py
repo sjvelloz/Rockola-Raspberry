@@ -43,7 +43,8 @@ _YDL_STREAM_OPTS: dict[str, Any] = {
     "noplaylist": True,
     "socket_timeout": 20,
     # Preferir un solo archivo; si no, DASH vídeo+audio (requested_formats)
-    "format": "bv*[height<=1080]+ba/b[height<=1080]/best",
+    # 720p: menos carga en la Pi 4 (Chromium UI + mpv a la vez)
+    "format": "bv*[height<=720]+ba/b[height<=720]/best",
     # Clientes modernos: evita "format is not available" en Pi
     "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
 }
