@@ -64,20 +64,22 @@ if [ -z "$TOUCH_DEV" ] && command -v libinput >/dev/null 2>&1; then
 fi
 TOUCH_DEV="${TOUCH_DEV:-QDtech MPI1001}"
 mkdir -p "${HOME}/.config/labwc"
-# rc.xml mínimo: reglas MoveTo antiguas provocaban "Config errors detected" en labwc nuevo
-# y el táctil dejaba de mapearse a la Mediatrix.
+# Solo mapeo táctil (sin windowRules: en labwc nuevo dan "Config errors detected")
 cat > "${HOME}/.config/labwc/rc.xml" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<labwc_config>
+<?xml version="1.0"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
 	<touch deviceName="${TOUCH_DEV}" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.1)" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.2)" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.3)" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.4)" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
-</labwc_config>
+</openbox_config>
 EOF
-labwc --reconfigure 2>/dev/null || true
+if [ -n "${LABWC_PID:-}" ] || LABWC_PID="$(pgrep -n labwc 2>/dev/null || true)"; then
+  export LABWC_PID
+  labwc --reconfigure 2>/dev/null || true
+fi
 echo "Touch '${TOUCH_DEV}' → ${UI_OUT}"
 
 # Audio: sink preferido (ROCKOLA_AUDIO_SINK=aux|hdmi) a tope
