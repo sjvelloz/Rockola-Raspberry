@@ -82,10 +82,11 @@ if [ -n "${LABWC_PID:-}" ] || LABWC_PID="$(pgrep -n labwc 2>/dev/null || true)";
 fi
 echo "Touch '${TOUCH_DEV}' → ${UI_OUT}"
 
-# Audio: sink preferido (ROCKOLA_AUDIO_SINK=aux|hdmi) a tope
+# Audio: sink preferido (ROCKOLA_AUDIO_SINK=aux|hdmi) + boost digital
 sleep 1
 if command -v wpctl >/dev/null 2>&1; then
-  wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true
+  SINK_VOL="${ROCKOLA_SINK_VOLUME:-1.5}"
+  wpctl set-volume @DEFAULT_AUDIO_SINK@ "$SINK_VOL" 2>/dev/null || true
   PREFER_AUDIO="$(echo "${ROCKOLA_AUDIO_SINK:-aux}" | tr '[:upper:]' '[:lower:]')"
   # Pi OS: jack = "Built-in Audio Stereo"; HDMI = "... (HDMI)"
   SINKS_BLOCK="$(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p')"
@@ -102,8 +103,8 @@ if command -v wpctl >/dev/null 2>&1; then
   esac
   if [ -n "${SINK_ID:-}" ]; then
     wpctl set-default "$SINK_ID" 2>/dev/null || true
-    wpctl set-volume "$SINK_ID" 1.0 2>/dev/null || true
-    echo "Audio sink ($PREFER_AUDIO) → $SINK_ID"
+    wpctl set-volume "$SINK_ID" "$SINK_VOL" 2>/dev/null || true
+    echo "Audio sink ($PREFER_AUDIO) → $SINK_ID vol=$SINK_VOL"
   fi
 fi
 

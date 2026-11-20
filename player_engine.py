@@ -566,14 +566,20 @@ class PlayerEngine:
             logger.warning("No se pudo gestionar salida tele %s", out)
 
     def _ensure_max_volume(self) -> None:
-        """Volumen del sistema a tope (se modula en el amplificador)."""
+        """Volumen del sistema (puede ir >1.0 con ganancia digital)."""
         if platform.system() == "Windows":
             return
         env = os.environ.copy()
         env.setdefault("XDG_RUNTIME_DIR", "/run/user/1000")
         try:
+            from config import SINK_VOLUME
+
+            sink_vol = f"{max(0.0, min(float(SINK_VOLUME), 2.0)):.2f}"
+        except Exception:
+            sink_vol = "1.50"
+        try:
             subprocess.run(
-                ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "1.0"],
+                ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", sink_vol],
                 env=env,
                 timeout=5,
                 check=False,
@@ -647,14 +653,19 @@ class PlayerEngine:
                     stderr=subprocess.DEVNULL,
                 )
                 subprocess.run(
-                    ["wpctl", "set-volume", chosen_id, "1.0"],
+                    ["wpctl", "set-volume", chosen_id, sink_vol],
                     env=env,
                     timeout=5,
                     check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                logger.info("Audio sink preferido (%s) → id %s", prefer, chosen_id)
+                logger.info(
+                    "Audio sink preferido (%s) → id %s vol=%s",
+                    prefer,
+                    chosen_id,
+                    sink_vol,
+                )
         except (OSError, subprocess.TimeoutExpired):
             pass
 

@@ -31,9 +31,11 @@ BUTTON_ACTIVE_HIGH = True
 REBOOT_HOLD_SECONDS = 1.0
 # Créditos por pulso del monedero CH-926
 COIN_CREDITS = int(os.environ.get("ROCKOLA_COIN_CREDITS", "3") or "3")
-# Volumen a tope: se modula desde el amplificador externo
+# mpv 0–100; el boost real del jack va en SINK_VOLUME (>1.0 = ganancia digital)
 AMBIENT_VOLUME = 100
 USER_VOLUME = 100
+# PipeWire soft-volume del sink AUX/HDMI (1.0=100%, 1.5=150%). Puede saturar.
+SINK_VOLUME = float(os.environ.get("ROCKOLA_SINK_VOLUME", "1.5") or "1.5")
 
 # Canciones de cumpleaños (botón GPIO → picker en UI → delante de la cola, sin ficha)
 BIRTHDAY_SONGS: list[dict[str, object]] = [
