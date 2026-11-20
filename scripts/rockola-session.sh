@@ -90,16 +90,20 @@ labwc --reconfigure 2>/dev/null || true
 sleep 1
 if command -v wpctl >/dev/null 2>&1; then
   wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true
-  PREFER_AUDIO="${ROCKOLA_AUDIO_SINK:-aux}"
-  case "$(echo "$PREFER_AUDIO" | tr '[:upper:]' '[:lower:]')" in
-    hdmi|tv|1) AUDIO_RE='HDMI' ;;
-    aux|headphones|analog|jack|3.5|headphone) AUDIO_RE='Headphones|Analog|Headphone|AV Jack|analogue' ;;
-    *) AUDIO_RE="$PREFER_AUDIO" ;;
-  esac
-  SINK_ID="$(wpctl status 2>/dev/null | awk -v re="$AUDIO_RE" '
-    BEGIN { IGNORECASE=1 }
-    $0 ~ re && /vol:/ {
-      line=$0; gsub(/[^0-9. ]/," ",line); split(line,a," ");
+  PREFER_AUDIO="$(echo "${ROCKOLA_AUDIO_SINK:-aux}" | tr '[:upper:]' '[:lower:]')"
+  # Pi OS: jack = "Built-in Audio Stereo"; HDMI = "... (HDMI)"
+  SINK_ID="$(wpctl status 2>/dev/null | awk -v prefer="$PREFER_AUDIO" '
+    /vol:/ {
+      line=$0
+      low=tolower(line)
+      is_hdmi = (low ~ /hdmi/)
+      is_aux = (!is_hdmi) && (low ~ /headphone|analog|av jack|built-in audio stereo/)
+      keep=0
+      if (prefer=="hdmi" || prefer=="tv" || prefer=="1") keep=is_hdmi
+      else if (prefer=="aux" || prefer=="headphones" || prefer=="analog" || prefer=="jack" || prefer=="3.5" || prefer=="headphone") keep=is_aux
+      else keep=(index(low, prefer)>0)
+      if (!keep) next
+      gsub(/[^0-9. ]/," ",line); split(line,a," ");
       for (i in a) if (a[i] ~ /^[0-9]+$/) { print a[i]; exit }
     }
   ')"

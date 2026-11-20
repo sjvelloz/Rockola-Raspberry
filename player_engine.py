@@ -583,11 +583,15 @@ class PlayerEngine:
             )
             # Preferir sink: hdmi | aux/headphones/analog (jack 3.5 mm)
             prefer = os.environ.get("ROCKOLA_AUDIO_SINK", "aux").strip().lower()
-            needle = "HDMI"
-            if prefer in {"aux", "headphones", "analog", "jack", "3.5", "headphone"}:
-                needle = "Headphones|Analog|Headphone|AV Jack|analogue"
-            elif prefer not in {"hdmi", "1", "tv"}:
-                needle = prefer
+            want_aux = prefer in {
+                "aux",
+                "headphones",
+                "analog",
+                "jack",
+                "3.5",
+                "headphone",
+            }
+            want_hdmi = prefer in {"hdmi", "1", "tv"}
             probe = subprocess.run(
                 ["wpctl", "status"],
                 env=env,
@@ -596,35 +600,51 @@ class PlayerEngine:
                 capture_output=True,
                 text=True,
             )
+            chosen_id: str | None = None
             for line in (probe.stdout or "").splitlines():
                 if "vol:" not in line:
                     continue
-                if not re.search(needle, line, flags=re.IGNORECASE):
+                low = line.lower()
+                is_hdmi = "hdmi" in low
+                # En Pi OS el jack suele ser "Built-in Audio Stereo" (sin HDMI).
+                is_aux = (not is_hdmi) and (
+                    "headphone" in low
+                    or "analog" in low
+                    or "av jack" in low
+                    or "built-in audio stereo" in low
+                )
+                if want_hdmi and not is_hdmi:
                     continue
-                # "│  *   45. Built-in Audio Analog Stereo [vol: 1.00]"
+                if want_aux and not is_aux:
+                    continue
+                if not want_hdmi and not want_aux:
+                    if prefer.lower() not in low:
+                        continue
                 parts = line.replace("│", " ").replace("*", " ").split()
                 for p in parts:
                     if p.endswith(".") and p[:-1].isdigit():
-                        sid = p[:-1]
-                        subprocess.run(
-                            ["wpctl", "set-default", sid],
-                            env=env,
-                            timeout=5,
-                            check=False,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                        subprocess.run(
-                            ["wpctl", "set-volume", sid, "1.0"],
-                            env=env,
-                            timeout=5,
-                            check=False,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                        logger.info("Audio sink preferido (%s) → id %s", prefer, sid)
+                        chosen_id = p[:-1]
                         break
-                break
+                if chosen_id:
+                    break
+            if chosen_id:
+                subprocess.run(
+                    ["wpctl", "set-default", chosen_id],
+                    env=env,
+                    timeout=5,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                subprocess.run(
+                    ["wpctl", "set-volume", chosen_id, "1.0"],
+                    env=env,
+                    timeout=5,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                logger.info("Audio sink preferido (%s) → id %s", prefer, chosen_id)
         except (OSError, subprocess.TimeoutExpired):
             pass
 
