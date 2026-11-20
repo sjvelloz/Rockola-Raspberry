@@ -42,7 +42,6 @@ body {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
-  /* pan-y permite scroll en resultados; manipulation bloqueaba el gesto */
   touch-action: manipulation;
   cursor: default;
 }
@@ -51,8 +50,7 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: #07060f;
-  position: relative;
+  background: #000;
 }
 
 body {
@@ -96,12 +94,11 @@ input {
 }
 
 .kiosk {
-  width: 100%;
-  height: 100%;
+  width: 1280px;
+  height: 800px;
   display: grid;
   grid-template-rows: var(--header-h) var(--toolbar-h) 1fr var(--keyboard-h) var(--footer-h);
-  padding: 0 10px;
-  box-sizing: border-box;
+  padding: 0 12px;
 }
 
 /* —— Header —— */
@@ -229,13 +226,6 @@ input {
   box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
 }
 
-.btn-clear {
-  min-width: 96px;
-  border-color: #8b93b3;
-  color: #d7dcf0;
-  background: rgba(20, 18, 38, 0.9);
-}
-
 .btn-hot {
   min-width: 210px;
   border-color: #ff00e5;
@@ -276,16 +266,12 @@ input {
 
 .results-grid {
   flex: 1;
-  min-height: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   padding: 8px;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
   align-content: start;
   scrollbar-width: thin;
   scrollbar-color: hsla(var(--hue), 90%, 55%, 0.4) transparent;
