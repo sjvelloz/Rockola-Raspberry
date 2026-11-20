@@ -17,7 +17,7 @@
 #include "wifi_secrets.h"  // SSID/clave/IP (local; no va a GitHub)
 
 // Hold para reinicio (como en la Pi)
-const unsigned long REBOOT_HOLD_MS = 2500;
+const unsigned long REBOOT_HOLD_MS = 1000;
 
 struct Button {
   const char* name;

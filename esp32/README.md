@@ -31,7 +31,7 @@ Para apuntar a rockola-1, en `wifi_secrets.h` pon `ROCKOLA_HOST = "192.168.1.244
 | OUT skip | **GPIO 33** |
 | OUT pausa | **GPIO 25** |
 | OUT cumpleaños | **GPIO 26** |
-| OUT reinicio | **GPIO 27** (mantener ~2,5 s) |
+| OUT reinicio | **GPIO 27** (mantener ~1 s) |
 
 La ESP32 se alimenta por **USB** (cargador o powerbank).
 

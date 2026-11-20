@@ -28,7 +28,7 @@ PIN_BIRTHDAY = 25      # Abrir selector de cumpleaños en pantalla
 # El monedero (PC817) sigue activo en bajo.
 BUTTON_ACTIVE_HIGH = True
 
-REBOOT_HOLD_SECONDS = 2.5
+REBOOT_HOLD_SECONDS = 1.0
 # Créditos por pulso del monedero CH-926
 COIN_CREDITS = int(os.environ.get("ROCKOLA_COIN_CREDITS", "3") or "3")
 # Volumen a tope: se modula desde el amplificador externo
