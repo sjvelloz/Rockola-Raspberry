@@ -11,7 +11,7 @@ LOG=/tmp/rockola-session.log
 exec >>"$LOG" 2>&1
 echo "=== rockola-session $(date -Iseconds) ==="
 
-# Cargar env si existe (valores con espacios van entre comillas)
+# Cargar env si existe (acepta valores con o sin comillas)
 if [ -f "$ROOT/rockola.env" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
@@ -22,6 +22,11 @@ if [ -f "$ROOT/rockola.env" ]; then
         val="${line#*=}"
         case "$key" in
           *[!A-Z0-9_]*) continue ;;
+        esac
+        # Quitar comillas envolventes si las hay
+        case "$val" in
+          \"*\") val="${val#\"}"; val="${val%\"}" ;;
+          \'*\') val="${val#\'}"; val="${val%\'}" ;;
         esac
         export "$key=$val"
         ;;
@@ -59,32 +64,21 @@ if [ -z "$TOUCH_DEV" ] && command -v libinput >/dev/null 2>&1; then
 fi
 TOUCH_DEV="${TOUCH_DEV:-QDtech MPI1001}"
 mkdir -p "${HOME}/.config/labwc"
+# rc.xml mínimo: reglas MoveTo antiguas provocaban "Config errors detected" en labwc nuevo
+# y el táctil dejaba de mapearse a la Mediatrix.
 cat > "${HOME}/.config/labwc/rc.xml" <<EOF
-<?xml version="1.0"?>
-<openbox_config xmlns="http://openbox.org/3.4/rc">
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
 	<touch deviceName="${TOUCH_DEV}" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.1)" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.2)" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.3)" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
 	<touch deviceName="QDtech MPI1001 (USB 1-1.4)" mapToOutput="${UI_OUT}" mouseEmulation="yes"/>
-	<windowRules>
-		<windowRule identifier="chromium*">
-			<action name="MoveTo" x="0" y="0"/>
-		</windowRule>
-		<windowRule identifier="Chromium*">
-			<action name="MoveTo" x="0" y="0"/>
-		</windowRule>
-		<windowRule identifier="org.chromium.Chromium">
-			<action name="MoveTo" x="0" y="0"/>
-		</windowRule>
-		<windowRule identifier="mpv" serverDecoration="no">
-			<action name="MoveTo" x="1920" y="0"/>
-		</windowRule>
-	</windowRules>
-</openbox_config>
+</labwc_config>
 EOF
 labwc --reconfigure 2>/dev/null || true
+echo "Touch '${TOUCH_DEV}' → ${UI_OUT}"
 
 # Audio: sink preferido (ROCKOLA_AUDIO_SINK=aux|hdmi) a tope
 sleep 1

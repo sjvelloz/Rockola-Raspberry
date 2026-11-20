@@ -36,7 +36,6 @@ for _ in $(seq 1 90); do
 done
 
 mkdir -p "$PROFILE"
-# Evitar “Opening in existing browser session” / ventana invisible tras kills
 rm -f "$PROFILE"/SingletonLock "$PROFILE"/SingletonSocket "$PROFILE"/SingletonCookie 2>/dev/null || true
 sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PROFILE/Default/Preferences" 2>/dev/null || true
 sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$PROFILE/Default/Preferences" 2>/dev/null || true
@@ -59,7 +58,7 @@ fi
 # UI en la táctil (izquierda, 0,0). La tele se enciende solo al reproducir.
 UI_POS="${ROCKOLA_UI_POSITION:-0,0}"
 
-# Flags pensados para Pi táctil: fullscreen real, sin zoom raro, sin barra de crash
+# Flags pensados para Pi táctil: fullscreen real, sin zoom raro, más fluido
 exec "$CHROME" \
   --kiosk \
   --start-fullscreen \
@@ -67,12 +66,9 @@ exec "$CHROME" \
   --noerrdialogs \
   --disable-infobars \
   --disable-session-crashed-bubble \
-  --hide-crash-restore-bubble \
   --disable-restore-session-state \
-  --no-first-run \
-  --no-default-browser-check \
   --disable-translate \
-  --disable-features=TranslateUI,InfiniteSessionRestore,IsolateOrigins,site-per-process \
+  --disable-features=TranslateUI,IsolateOrigins,site-per-process \
   --disable-pinch \
   --overscroll-history-navigation=0 \
   --autoplay-policy=no-user-gesture-required \
