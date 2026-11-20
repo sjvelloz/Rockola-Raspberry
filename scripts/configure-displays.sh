@@ -126,9 +126,10 @@ ROCKOLA_VIDEO_GEOMETRY=${GEO}
 ROCKOLA_X11_SCREEN=${X11_SCREEN}
 ROCKOLA_MPV_VO=x11
 ROCKOLA_MPV_FS_SCREEN=${X11_SCREEN}
-# soft = tele ON con fondo negro (audio HDMI); hard = apaga la salida
+# soft = tele ON con fondo negro; hard = apaga la salida
 ROCKOLA_BLANK_TV_WHEN_IDLE=soft
-ROCKOLA_AUDIO_SINK=hdmi
+# aux = jack 3.5 mm; hdmi = audio por la tele
+ROCKOLA_AUDIO_SINK=aux
 EOF
 
 echo

@@ -86,18 +86,27 @@ cat > "${HOME}/.config/labwc/rc.xml" <<EOF
 EOF
 labwc --reconfigure 2>/dev/null || true
 
-# Audio: HDMI a tope
+# Audio: sink preferido (ROCKOLA_AUDIO_SINK=aux|hdmi) a tope
 sleep 1
 if command -v wpctl >/dev/null 2>&1; then
   wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true
-  # Preferir sink HDMI
-  HDMI_ID="$(wpctl status 2>/dev/null | awk '/HDMI/ && /vol:/ {
-    line=$0; gsub(/[^0-9. ]/," ",line); split(line,a," ");
-    for (i in a) if (a[i] ~ /^[0-9]+$/) { print a[i]; exit }
-  }')"
-  if [ -n "${HDMI_ID:-}" ]; then
-    wpctl set-default "$HDMI_ID" 2>/dev/null || true
-    wpctl set-volume "$HDMI_ID" 1.0 2>/dev/null || true
+  PREFER_AUDIO="${ROCKOLA_AUDIO_SINK:-aux}"
+  case "$(echo "$PREFER_AUDIO" | tr '[:upper:]' '[:lower:]')" in
+    hdmi|tv|1) AUDIO_RE='HDMI' ;;
+    aux|headphones|analog|jack|3.5|headphone) AUDIO_RE='Headphones|Analog|Headphone|AV Jack|analogue' ;;
+    *) AUDIO_RE="$PREFER_AUDIO" ;;
+  esac
+  SINK_ID="$(wpctl status 2>/dev/null | awk -v re="$AUDIO_RE" '
+    BEGIN { IGNORECASE=1 }
+    $0 ~ re && /vol:/ {
+      line=$0; gsub(/[^0-9. ]/," ",line); split(line,a," ");
+      for (i in a) if (a[i] ~ /^[0-9]+$/) { print a[i]; exit }
+    }
+  ')"
+  if [ -n "${SINK_ID:-}" ]; then
+    wpctl set-default "$SINK_ID" 2>/dev/null || true
+    wpctl set-volume "$SINK_ID" 1.0 2>/dev/null || true
+    echo "Audio sink ($PREFER_AUDIO) → $SINK_ID"
   fi
 fi
 

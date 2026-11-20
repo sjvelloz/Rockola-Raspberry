@@ -17,6 +17,8 @@ import logging
 import os
 import platform
 import queue
+import random
+import re
 import shutil
 import subprocess
 import sys
@@ -25,8 +27,6 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
-
-import random
 
 from config import (
     AMBIENT_DIR,
@@ -581,42 +581,50 @@ class PlayerEngine:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            # Preferir sink HDMI si existe
-            prefer = os.environ.get("ROCKOLA_AUDIO_SINK", "hdmi").strip().lower()
-            if prefer in {"hdmi", "1", "tv"}:
-                probe = subprocess.run(
-                    ["wpctl", "status"],
-                    env=env,
-                    timeout=5,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-                for line in (probe.stdout or "").splitlines():
-                    if "HDMI" in line and "vol:" in line:
-                        # "│      45. Built-in Audio Digital Stereo (HDMI) [vol: 1.00]"
-                        parts = line.replace("│", " ").replace("*", " ").split()
-                        for p in parts:
-                            if p.endswith(".") and p[:-1].isdigit():
-                                sid = p[:-1]
-                                subprocess.run(
-                                    ["wpctl", "set-default", sid],
-                                    env=env,
-                                    timeout=5,
-                                    check=False,
-                                    stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL,
-                                )
-                                subprocess.run(
-                                    ["wpctl", "set-volume", sid, "1.0"],
-                                    env=env,
-                                    timeout=5,
-                                    check=False,
-                                    stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL,
-                                )
-                                break
+            # Preferir sink: hdmi | aux/headphones/analog (jack 3.5 mm)
+            prefer = os.environ.get("ROCKOLA_AUDIO_SINK", "aux").strip().lower()
+            needle = "HDMI"
+            if prefer in {"aux", "headphones", "analog", "jack", "3.5", "headphone"}:
+                needle = "Headphones|Analog|Headphone|AV Jack|analogue"
+            elif prefer not in {"hdmi", "1", "tv"}:
+                needle = prefer
+            probe = subprocess.run(
+                ["wpctl", "status"],
+                env=env,
+                timeout=5,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            for line in (probe.stdout or "").splitlines():
+                if "vol:" not in line:
+                    continue
+                if not re.search(needle, line, flags=re.IGNORECASE):
+                    continue
+                # "│  *   45. Built-in Audio Analog Stereo [vol: 1.00]"
+                parts = line.replace("│", " ").replace("*", " ").split()
+                for p in parts:
+                    if p.endswith(".") and p[:-1].isdigit():
+                        sid = p[:-1]
+                        subprocess.run(
+                            ["wpctl", "set-default", sid],
+                            env=env,
+                            timeout=5,
+                            check=False,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        subprocess.run(
+                            ["wpctl", "set-volume", sid, "1.0"],
+                            env=env,
+                            timeout=5,
+                            check=False,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        logger.info("Audio sink preferido (%s) → id %s", prefer, sid)
                         break
+                break
         except (OSError, subprocess.TimeoutExpired):
             pass
 
