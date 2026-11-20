@@ -85,7 +85,7 @@ echo "Touch '${TOUCH_DEV}' → ${UI_OUT}"
 # Audio: sink preferido (ROCKOLA_AUDIO_SINK=aux|hdmi) + boost digital
 sleep 1
 if command -v wpctl >/dev/null 2>&1; then
-  SINK_VOL="${ROCKOLA_SINK_VOLUME:-1.5}"
+  SINK_VOL="${ROCKOLA_SINK_VOLUME:-1.0}"
   wpctl set-volume @DEFAULT_AUDIO_SINK@ "$SINK_VOL" 2>/dev/null || true
   PREFER_AUDIO="$(echo "${ROCKOLA_AUDIO_SINK:-aux}" | tr '[:upper:]' '[:lower:]')"
   # Pi OS: jack = "Built-in Audio Stereo"; HDMI = "... (HDMI)"
