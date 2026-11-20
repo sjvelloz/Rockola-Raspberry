@@ -37,6 +37,10 @@ done
 
 mkdir -p "$PROFILE"
 rm -f "$PROFILE"/SingletonLock "$PROFILE"/SingletonSocket "$PROFILE"/SingletonCookie 2>/dev/null || true
+# Evitar UI vieja pegada en caché de Chromium tras deploys
+rm -rf "$PROFILE/Default/Cache" "$PROFILE/Default/Code Cache" \
+  "$PROFILE/Default/GPUCache" "$PROFILE/ShaderCache" \
+  "$PROFILE/GrShaderCache" 2>/dev/null || true
 sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PROFILE/Default/Preferences" 2>/dev/null || true
 sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$PROFILE/Default/Preferences" 2>/dev/null || true
 
@@ -78,5 +82,7 @@ exec "$CHROME" \
   --enable-gpu-rasterization \
   --ignore-gpu-blocklist \
   --num-raster-threads=2 \
+  --disk-cache-size=1 \
+  --media-cache-size=1 \
   --user-data-dir="$PROFILE" \
   --app="$URL"

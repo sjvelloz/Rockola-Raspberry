@@ -169,7 +169,13 @@ if STATIC_DIR.exists():
 @app.get("/")
 async def index() -> FileResponse:
     """Sirve la interfaz táctil en modo kiosk."""
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
