@@ -228,9 +228,10 @@ input {
 
 .btn-clear {
   min-width: 96px;
-  border-color: #8b93b3;
-  color: #d7dcf0;
-  background: rgba(20, 18, 38, 0.9);
+  border-color: #ffee00;
+  color: #fff6a8;
+  background: rgba(40, 32, 8, 0.95);
+  box-shadow: 0 0 12px rgba(255, 238, 0, 0.22);
 }
 
 .btn-hot {
