@@ -1,73 +1,118 @@
 #!/usr/bin/env bash
-# Mantiene el micrófono de karaoke abierto: loopback Source → HyperX.
-# El dongle suele aparecer como "Logitech USB Microphone" (USB).
-
+# Karaoke: micrófono Logitech → HyperX siempre abierto (module-loopback).
 set -euo pipefail
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+export PULSE_SERVER="${PULSE_SERVER:-unix:${XDG_RUNTIME_DIR}/pulse/native}"
 
 MIC_MATCH="${ROCKOLA_MIC_MATCH:-Logitech USB Microphone}"
 SINK_MATCH="${ROCKOLA_KARAOKE_SINK_MATCH:-HyperX|Kingston}"
-PIDFILE="${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid"
-NAME="rockola-karaoke"
+TAG="rockola-karaoke"
+STATE="${XDG_RUNTIME_DIR}/rockola-karaoke.state"
 
-if ! command -v wpctl >/dev/null 2>&1 || ! command -v pw-loopback >/dev/null 2>&1; then
-  echo "karaoke: wpctl/pw-loopback no disponibles"
+if ! command -v wpctl >/dev/null 2>&1; then
+  echo "karaoke: wpctl no disponible"
   exit 0
 fi
 
-# Source del mic (prioriza Logitech; evita HyperX headset mic si hay mic dedicado)
-SRC_BLOCK="$(wpctl status 2>/dev/null | awk '/Sources:/{p=1;next} /Filters:/{p=0} p')"
-SRC_ID="$(printf '%s\n' "$SRC_BLOCK" | grep 'vol:' | grep -i "$MIC_MATCH" | head -1 | grep -oE '[0-9]+' | head -1 || true)"
-if [ -z "${SRC_ID:-}" ]; then
-  SRC_ID="$(printf '%s\n' "$SRC_BLOCK" | grep 'vol:' | grep -viE 'HyperX|hdmi|isp|monitor' | head -1 | grep -oE '[0-9]+' | head -1 || true)"
-fi
-if [ -z "${SRC_ID:-}" ]; then
+SINKS="$(wpctl status 2>/dev/null | sed -n '/Audio/,/Video/p' | sed -n '/Sinks:/,/Sources:/p')"
+SRCS="$(wpctl status 2>/dev/null | sed -n '/Audio/,/Video/p' | awk '/Sources:/{p=1;next} /Filters:/{p=0} p')"
+
+MIC_ID="$(printf '%s\n' "$SRCS" | grep 'vol:' | grep -i "$MIC_MATCH" | head -1 | grep -oE '[0-9]+' | head -1 || true)"
+if [ -z "${MIC_ID:-}" ]; then
   echo "karaoke: sin micrófono todavía"
   exit 0
 fi
 
-# Sink HyperX (tarjeta de sonido USB)
-SNK_BLOCK="$(wpctl status 2>/dev/null | sed -n '/Audio/,/Video/p' | sed -n '/Sinks:/,/Sources:/p')"
-SNK_ID="$(printf '%s\n' "$SNK_BLOCK" | grep 'vol:' | grep -iE "$SINK_MATCH" | head -1 | grep -oE '[0-9]+' | head -1 || true)"
-if [ -z "${SNK_ID:-}" ]; then
-  echo "karaoke: sin sink HyperX"
+HX_ID="$(printf '%s\n' "$SINKS" | grep 'vol:' | grep -iE "$SINK_MATCH" | head -1 | grep -oE '[0-9]+' | head -1 || true)"
+if [ -z "${HX_ID:-}" ]; then
+  echo "karaoke: sin HyperX"
   exit 0
 fi
 
-SRC_NAME="$(wpctl inspect "$SRC_ID" 2>/dev/null | awk -F'"' '/node.name/ {print $2; exit}')"
-SNK_NAME="$(wpctl inspect "$SNK_ID" 2>/dev/null | awk -F'"' '/node.name/ {print $2; exit}')"
+MIC_NAME="$(wpctl inspect "$MIC_ID" 2>/dev/null | awk -F'"' '/node.name/ {print $2; exit}')"
+HX_NAME="$(wpctl inspect "$HX_ID" 2>/dev/null | awk -F'"' '/node.name/ {print $2; exit}')"
 
-wpctl set-mute "$SRC_ID" 0 2>/dev/null || true
-wpctl set-volume "$SRC_ID" 1.0 2>/dev/null || true
-wpctl set-default "$SRC_ID" 2>/dev/null || true
-wpctl set-default "$SNK_ID" 2>/dev/null || true
-wpctl set-volume "$SNK_ID" "${ROCKOLA_SINK_VOLUME:-1.0}" 2>/dev/null || true
+wpctl set-mute "$MIC_ID" 0 2>/dev/null || true
+wpctl set-volume "$MIC_ID" 1.0 2>/dev/null || true
+wpctl set-default "$MIC_ID" 2>/dev/null || true
+wpctl set-mute "$HX_ID" 0 2>/dev/null || true
+wpctl set-default "$HX_ID" 2>/dev/null || true
+wpctl set-volume "$HX_ID" "${ROCKOLA_SINK_VOLUME:-1.0}" 2>/dev/null || true
 
-# ¿Ya hay un loopback vivo?
-if [ -f "$PIDFILE" ]; then
-  old="$(cat "$PIDFILE" 2>/dev/null || true)"
-  if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
-    echo "karaoke: loopback ok pid=$old mic=$SRC_ID($SRC_NAME) → sink=$SNK_ID($SNK_NAME)"
+# ¿Ya hay un loopback vivo y enlazado?
+if command -v pactl >/dev/null 2>&1; then
+  if pactl list short modules 2>/dev/null | grep -q "module-loopback.*source=${MIC_NAME}.*sink=${HX_NAME}"; then
+    echo "karaoke: pactl loopback ok mic=$MIC_ID → sink=$HX_ID"
     exit 0
   fi
-  rm -f "$PIDFILE"
+  # Quitar loopbacks karaoke viejos
+  pactl list short modules 2>/dev/null | grep module-loopback | while read -r mid rest; do
+    case "$rest" in
+      *"$TAG"*|*source="${MIC_NAME}"*|*Logitech*)
+        pactl unload-module "$mid" 2>/dev/null || true
+        ;;
+    esac
+  done
 fi
 
-# Mata instancias previas con el mismo nombre
-pkill -f "pw-loopback.*${NAME}" 2>/dev/null || true
-sleep 0.3
+# Matar pw-loopback viejo (la config anterior no enlazaba bien)
+pkill -f "pw-loopback.*${TAG}" 2>/dev/null || true
+rm -f "${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid" 2>/dev/null || true
 
-nohup pw-loopback \
-  --name "$NAME" \
-  --capture-props="media.class=Audio/Source target.object=${SRC_NAME} node.description=Rockola Karaoke Mic" \
-  --playback-props="media.class=Audio/Sink target.object=${SNK_NAME} node.description=Rockola Karaoke Out" \
+LOADED=""
+if command -v pactl >/dev/null 2>&1; then
+  LOADED="$(pactl load-module module-loopback \
+    source="$MIC_NAME" \
+    sink="$HX_NAME" \
+    latency_msec=30 \
+    source_dont_move=true \
+    sink_dont_move=true \
+    sink_input_properties=media.name=${TAG} \
+    2>&1 || true)"
+fi
+
+if [[ "$LOADED" =~ ^[0-9]+$ ]]; then
+  echo "module=$LOADED" >"$STATE"
+  echo "karaoke: pactl module-loopback=$LOADED mic=$MIC_ID($MIC_NAME) → sink=$HX_ID($HX_NAME)"
+  exit 0
+fi
+
+echo "karaoke: pactl falló ($LOADED); probando pw-loopback+pw-link"
+
+# Fallback: pw-loopback + enlaces manuales
+nohup pw-loopback -c 1 --name "$TAG" \
   >/tmp/rockola-karaoke.log 2>&1 &
-echo $! >"$PIDFILE"
-sleep 0.5
-if kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-  echo "karaoke: started pid=$(cat "$PIDFILE") mic=$SRC_ID → sink=$SNK_ID"
-else
-  echo "karaoke: falló al arrancar (ver /tmp/rockola-karaoke.log)"
-  rm -f "$PIDFILE"
+echo $! >"${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid"
+sleep 0.8
+
+# Enlazar mic → input del loopback y output del loopback → HyperX
+if command -v pw-link >/dev/null 2>&1; then
+  # Desenlaces previos del tag
+  pw-link -d "${MIC_NAME}:capture_MONO" 2>/dev/null || true
+  # Buscar puertos del loopback
+  pw-link -o 2>/dev/null | grep -i "$TAG" || true
+  pw-link -i 2>/dev/null | grep -i "$TAG" || true
+
+  # mono mic → loopback capture (varios nombres posibles)
+  for cap in \
+    "input.${TAG}:capture_MONO" \
+    "input.${TAG}:capture_FL" \
+    "${TAG}:input_MONO" \
+    "loopback-.*:input_FL"
+  do
+    pw-link "${MIC_NAME}:capture_MONO" "$cap" 2>/dev/null && break || true
+  done
+
+  for play in \
+    "output.${TAG}:output_MONO" \
+    "output.${TAG}:output_FL" \
+    "${TAG}:output_FL"
+  do
+    pw-link "$play" "${HX_NAME}:playback_FL" 2>/dev/null || true
+    pw-link "$play" "${HX_NAME}:playback_FR" 2>/dev/null || true
+  done
 fi
+
+echo "karaoke: fallback pw-loopback pid=$(cat "${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid" 2>/dev/null || echo ?)"
+pw-link -l 2>/dev/null | grep -iE "Logitech|HyperX|${TAG}|loopback" | head -40 || true
