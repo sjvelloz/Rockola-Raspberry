@@ -106,13 +106,13 @@ class KaraokeManager:
             SCRIPT.chmod(SCRIPT.stat().st_mode | 0o111)
         except OSError:
             pass
-        # Música con margen; mic a 1024
+        # No forzar quantum global (ensucia la música); solo el loopback a 1024
         self._run(
             ["pw-metadata", "-n", "settings", "0", "clock.force-quantum", "0"],
             timeout=5,
         )
         self._run(
-            ["pw-metadata", "-n", "settings", "0", "clock.quantum", "2048"],
+            ["pw-metadata", "-n", "settings", "0", "clock.quantum", "1024"],
             timeout=5,
         )
         # Forzar reinicio del loopback
@@ -129,13 +129,13 @@ class KaraokeManager:
     def _disable_unlocked(self, *, notify: bool) -> bool:
         self._kill_loopback()
         self._unlink_direct()
-        # Restaurar buffer cómodo para música sola
+        # Restaurar buffer estable para música sola
         self._run(
             ["pw-metadata", "-n", "settings", "0", "clock.force-quantum", "0"],
             timeout=5,
         )
         self._run(
-            ["pw-metadata", "-n", "settings", "0", "clock.quantum", "2048"],
+            ["pw-metadata", "-n", "settings", "0", "clock.quantum", "1024"],
             timeout=5,
         )
         # HyperX PCM ~0 dB

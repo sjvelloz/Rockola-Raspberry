@@ -117,7 +117,7 @@ fi
 pkill -f 'pw-loopback.*rockola-karaoke' 2>/dev/null || true
 rm -f "${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid" 2>/dev/null || true
 pw-metadata -n settings 0 clock.force-quantum 0 2>/dev/null || true
-pw-metadata -n settings 0 clock.quantum 2048 2>/dev/null || true
+pw-metadata -n settings 0 clock.quantum 1024 2>/dev/null || true
 amixer -c 3 sset PCM 70 unmute 2>/dev/null || true
 echo "Karaoke OFF (activar en pantalla)"
 
