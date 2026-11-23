@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Karaoke: Logitech mic → pw-loopback → HyperX (siempre abierto).
+# Karaoke baja latencia: Logitech mic → pw-loopback → HyperX.
 set -euo pipefail
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
@@ -8,6 +8,10 @@ MIC_MATCH="${ROCKOLA_MIC_MATCH:-Logitech USB Microphone}"
 SINK_MATCH="${ROCKOLA_KARAOKE_SINK_MATCH:-HyperX|Kingston}"
 TAG="rockola-karaoke"
 PIDFILE="${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid"
+# 256/48000 ≈ 5.3 ms por bloque (antes 1024 ≈ 21 ms)
+QUANTUM="${ROCKOLA_KARAOKE_QUANTUM:-256}"
+RATE="${ROCKOLA_KARAOKE_RATE:-48000}"
+LATENCY="${QUANTUM}/${RATE}"
 
 if ! command -v wpctl >/dev/null 2>&1 || ! command -v pw-loopback >/dev/null 2>&1; then
   echo "karaoke: herramientas PipeWire no disponibles"
@@ -44,39 +48,53 @@ if command -v amixer >/dev/null 2>&1; then
   done
 fi
 
-alive=0
+# Bajar quantum global de la sesión (karaoke + música)
+if command -v pw-metadata >/dev/null 2>&1; then
+  pw-metadata -n settings 0 clock.force-quantum "$QUANTUM" >/dev/null 2>&1 || true
+  pw-metadata -n settings 0 clock.rate "$RATE" >/dev/null 2>&1 || true
+fi
+
+# ¿Hay que reiniciar el loopback? (pid muerto o latencia vieja)
+need_restart=1
 if [ -f "$PIDFILE" ]; then
   old="$(cat "$PIDFILE" 2>/dev/null || true)"
   if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
-    alive=1
+    # Si el proceso ya usa -l con nuestro LATENCY, reutilizar
+    if tr '\0' ' ' <"/proc/$old/cmdline" 2>/dev/null | grep -q -- "-l ${LATENCY}"; then
+      need_restart=0
+    fi
   fi
 fi
-if [ "$alive" -eq 0 ]; then
+
+if [ "$need_restart" -eq 1 ]; then
   pkill -f "pw-loopback.*${TAG}" 2>/dev/null || true
   sleep 0.2
-  nohup pw-loopback -c 2 --name "$TAG" >/tmp/rockola-karaoke.log 2>&1 &
+  # Quitar enlaces directos viejos mic→HyperX (causan eco/delay doble)
+  if command -v pw-link >/dev/null 2>&1; then
+    pw-link -d "${MIC_NAME}:capture_MONO" "${HX_NAME}:playback_FL" 2>/dev/null || true
+    pw-link -d "${MIC_NAME}:capture_MONO" "${HX_NAME}:playback_FR" 2>/dev/null || true
+  fi
+  nohup pw-loopback -c 2 --name "$TAG" -l "$LATENCY" \
+    --capture-props="node.latency=${LATENCY} node.force-quantum=${QUANTUM}" \
+    --playback-props="node.latency=${LATENCY} node.force-quantum=${QUANTUM}" \
+    >/tmp/rockola-karaoke.log 2>&1 &
   echo $! >"$PIDFILE"
-  sleep 0.8
+  sleep 0.6
 fi
 
 L() { pw-link "$1" "$2" 2>/dev/null || true; }
 
-# Mic → entrada del loopback
+# Solo UNA ruta: mic → loopback → HyperX (sin enlace directo)
 for mp in capture_MONO capture_FL capture_FR; do
   for ip in input_MONO input_FL input_FR; do
     L "${MIC_NAME}:${mp}" "input.${TAG}:${ip}"
   done
 done
-
-# Salida del loopback → HyperX
 for op in output_FL output_FR output_MONO; do
   L "output.${TAG}:${op}" "${HX_NAME}:playback_FL"
   L "output.${TAG}:${op}" "${HX_NAME}:playback_FR"
 done
 
-# Respaldo directo
-L "${MIC_NAME}:capture_MONO" "${HX_NAME}:playback_FL"
-L "${MIC_NAME}:capture_MONO" "${HX_NAME}:playback_FR"
-
-echo "karaoke: mic=$MIC_ID → HyperX=$HX_ID pid=$(cat "$PIDFILE" 2>/dev/null || echo ?)"
-pw-link -l 2>/dev/null | grep -E "Logitech|${TAG}|HyperX Virtual" | head -40 || true
+echo "karaoke: low-latency quantum=${QUANTUM} (${LATENCY}) mic=$MIC_ID → HyperX=$HX_ID pid=$(cat "$PIDFILE" 2>/dev/null || echo ?)"
+pw-metadata -n settings 2>/dev/null | grep -E 'quantum|rate' || true
+pw-link -l 2>/dev/null | grep -E "Logitech|${TAG}|HyperX Virtual" | head -30 || true
