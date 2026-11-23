@@ -864,6 +864,11 @@ class PlayerEngine:
             # Cadena de backends de audio (PipeWire de la sesión gráfica)
             f"--ao={self._ao}",
             f"--input-ipc-server={self._mpv_ipc}",
+            # Misma tasa que PipeWire/HyperX → menos resampling y menos “feo”
+            "--audio-samplerate=48000",
+            "--audio-channels=stereo",
+            "--audio-pitch-correction=no",
+            "--gapless-audio=no",
         ]
         if self._audio_device:
             cmd.append(f"--audio-device={self._audio_device}")

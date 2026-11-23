@@ -42,11 +42,15 @@ _YDL_STREAM_OPTS: dict[str, Any] = {
     "skip_download": True,
     "noplaylist": True,
     "socket_timeout": 20,
-    # Preferir un solo archivo; si no, DASH vídeo+audio (requested_formats)
+    # DASH vídeo+audio (mejor sonido que itag 18 progresivo). web primero.
     # 720p: menos carga en la Pi manteniendo calidad usable en la tele
-    "format": "bv*[height<=720]+ba/b[height<=720]/best",
-    # Clientes modernos: evita "format is not available" en Pi
-    "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+    "format": (
+        "bv*[height<=720][fps<=60]+ba[acodec^=mp4a]/"
+        "bv*[height<=720]+ba/"
+        "b[height<=720]/"
+        "best"
+    ),
+    "extractor_args": {"youtube": {"player_client": ["web", "android"]}},
 }
 
 _YDL_AUDIO_OPTS: dict[str, Any] = {
@@ -55,8 +59,8 @@ _YDL_AUDIO_OPTS: dict[str, Any] = {
     "skip_download": True,
     "noplaylist": True,
     "socket_timeout": 20,
-    "format": "bestaudio/best",
-    "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+    "format": "bestaudio[acodec^=mp4a]/bestaudio/best",
+    "extractor_args": {"youtube": {"player_client": ["web", "android"]}},
 }
 
 _cache_lock = threading.Lock()

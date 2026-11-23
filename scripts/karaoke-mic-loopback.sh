@@ -9,8 +9,8 @@ MIC_MATCH="${ROCKOLA_MIC_MATCH:-Logitech USB Microphone}"
 SINK_MATCH="${ROCKOLA_KARAOKE_SINK_MATCH:-HyperX|Kingston}"
 TAG="rockola-karaoke"
 PIDFILE="${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid"
-# Latencia del loopback (no global). 512 ≈ buen equilibrio mic/música en Pi.
-QUANTUM="${ROCKOLA_KARAOKE_QUANTUM:-512}"
+# Latencia del loopback (no global). 1024 evita xruns USB que ensucian la música.
+QUANTUM="${ROCKOLA_KARAOKE_QUANTUM:-1024}"
 RATE="${ROCKOLA_KARAOKE_RATE:-48000}"
 LATENCY="${QUANTUM}/${RATE}"
 
