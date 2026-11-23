@@ -117,6 +117,7 @@ class KaraokeManager:
         )
         # Forzar reinicio del loopback
         self._kill_loopback()
+        self._mute_mic(False)
         proc = self._run(["bash", str(SCRIPT)], timeout=25)
         out = (proc.stdout or "") + (proc.stderr or "")
         logger.info("Karaoke ON: %s", out.strip()[:300])
@@ -125,6 +126,39 @@ class KaraokeManager:
         except OSError:
             pass
         return proc.returncode == 0 or "karaoke:" in out
+
+    def _mute_mic(self, muted: bool) -> None:
+        """Mute/unmute Logitech capture to ease USB when karaoke is off."""
+        probe = self._run(["wpctl", "status"], timeout=5)
+        text = probe.stdout or ""
+        in_sources = False
+        mic_id: str | None = None
+        for line in text.splitlines():
+            s = line.strip()
+            if s.startswith("Sources:"):
+                in_sources = True
+                continue
+            if in_sources and (
+                s.startswith("Filters:") or s.startswith("Streams:")
+            ):
+                break
+            if in_sources and "logitech" in line.lower() and "vol:" in line.lower():
+                parts = line.replace("│", " ").replace("*", " ").split()
+                for p in parts:
+                    if p.endswith(".") and p[:-1].isdigit():
+                        mic_id = p[:-1]
+                        break
+                if mic_id:
+                    break
+        if not mic_id:
+            return
+        self._run(
+            ["wpctl", "set-mute", mic_id, "1" if muted else "0"], timeout=5
+        )
+        if muted:
+            self._run(["wpctl", "set-volume", mic_id, "0"], timeout=5)
+        else:
+            self._run(["wpctl", "set-volume", mic_id, "1.0"], timeout=5)
 
     def _disable_unlocked(self, *, notify: bool) -> bool:
         self._kill_loopback()
@@ -138,8 +172,13 @@ class KaraokeManager:
             ["pw-metadata", "-n", "settings", "0", "clock.quantum", "1024"],
             timeout=5,
         )
-        # HyperX PCM ~0 dB
+        # HyperX PCM ~0 dB + volumen sink a tope
         self._run(["amixer", "-c", "3", "sset", "PCM", "70", "unmute"], timeout=5)
+        self._run(
+            ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "1.0"], timeout=5
+        )
+        # Mutear captura del mic para no cargar el USB si nadie canta
+        self._mute_mic(True)
         try:
             STATE_FILE.write_text("0", encoding="utf-8")
         except OSError:
