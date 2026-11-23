@@ -129,7 +129,7 @@ ROCKOLA_MPV_FS_SCREEN=${X11_SCREEN}
 # soft = tele ON con fondo negro; hard = apaga la salida
 ROCKOLA_BLANK_TV_WHEN_IDLE=soft
 # aux = jack 3.5 mm; hdmi = audio por la tele
-ROCKOLA_AUDIO_SINK=aux
+ROCKOLA_AUDIO_SINK=hyperx
 EOF
 
 echo
