@@ -38,6 +38,11 @@
   let keyboardTarget = true;
   let birthdaySongs = null;
   let birthdayBusy = false;
+  /** @type {Set<string>} */
+  let activeSongIds = new Set();
+  /** Últimos resultados para re-pintar al cambiar la cola */
+  let lastResults = [];
+  let lastResultsMode = "search";
 
   // Escala el layout 1280×800 para llenar la pantalla táctil real
   function fitKioskToScreen() {
@@ -217,10 +222,23 @@
     }
   }
 
+  function updateActiveSongIds(queue, current) {
+    const next = new Set();
+    if (current && current.id_youtube) next.add(String(current.id_youtube));
+    (Array.isArray(queue) ? queue : []).forEach((item) => {
+      if (item && item.id_youtube) next.add(String(item.id_youtube));
+    });
+    activeSongIds = next;
+    if (lastResults.length) {
+      renderResults(lastResults, { mode: lastResultsMode });
+    }
+  }
+
   function applyQueuePayload(data) {
     setState(data.state);
     setNowPlaying(data.current, data.state);
     renderQueue(data.queue || []);
+    updateActiveSongIds(data.queue || [], data.current);
     if (data.paused != null) setPaused(data.paused);
     if (data.mpv_available === false) {
       els.hint.textContent = "Instala mpv (winget install shinchiro.mpv) y reinicia el servidor";
@@ -353,6 +371,10 @@
       showToast("Supera 10 min — no se puede seleccionar", true);
       return;
     }
+    if (item.id_youtube && activeSongIds.has(String(item.id_youtube))) {
+      showToast("Esa canción ya está en la lista", true);
+      return;
+    }
     if (credits < 1) {
       showToast("No hay fichas disponibles", true);
       return;
@@ -378,11 +400,18 @@
           data.detail ||
           (data.error === "no_credits"
             ? "No hay fichas disponibles"
-            : "No se pudo encolar la canción");
+            : data.error === "already_queued"
+              ? "Esa canción ya está en la lista"
+              : "No se pudo encolar la canción");
         showToast(msg, true);
+        if (data.queue || data.current) {
+          updateActiveSongIds(data.queue || [], data.current);
+          if (data.queue) renderQueue(data.queue);
+        }
         return;
       }
       if (data.queue) renderQueue(data.queue);
+      updateActiveSongIds(data.queue || [], data.current);
       if (data.state) setState(data.state);
       clearSearchText();
       showToast(`Añadida: ${item.titulo}`);
@@ -398,6 +427,8 @@
   function renderResults(items, { mode } = { mode: "search" }) {
     els.results.innerHTML = "";
     const list = Array.isArray(items) ? items : [];
+    lastResults = list;
+    lastResultsMode = mode || "search";
     els.resultsPane.classList.toggle("is-empty", list.length === 0);
 
     for (const item of list) {
@@ -408,7 +439,9 @@
           ? true
           : item.elegible === true ||
             (durationSec != null && durationSec <= MAX_DURATION);
-      const blocked = !elegible;
+      const alreadyQueued =
+        !!item.id_youtube && activeSongIds.has(String(item.id_youtube));
+      const blocked = !elegible || alreadyQueued;
 
       const card = document.createElement("article");
       card.className = "card" + (blocked ? " disabled" : "");
@@ -430,7 +463,7 @@
       if (blocked) {
         const badge = document.createElement("div");
         badge.className = "badge-blocked";
-        badge.textContent = "Supera 10 min";
+        badge.textContent = alreadyQueued ? "Ya en cola" : "Supera 10 min";
         thumb.appendChild(badge);
       }
 
@@ -582,8 +615,10 @@
         if (data.creditos_disponibles != null) setCredits(data.creditos_disponibles);
       }
       if (data.type === "state") setState(data.state);
-      if (data.type === "track") setNowPlaying(data.current, els.state.textContent);
-      if (data.type === "queue") renderQueue(data.queue || []);
+      if (data.type === "track" || data.type === "queue") {
+        // Estado completo: current + cola (evita desincronizar “ya en cola”)
+        refreshQueue();
+      }
       if (data.type === "pause") setPaused(data.paused);
       if (data.type === "birthday_open") openBirthdayPicker();
       if (data.type === "error" && data.detail) {

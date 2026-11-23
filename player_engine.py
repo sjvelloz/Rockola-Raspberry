@@ -267,6 +267,16 @@ class PlayerEngine:
     # API pública
     # ------------------------------------------------------------------
 
+    def _active_youtube_ids(self) -> set[str]:
+        """IDs de la pista actual + cola (para no repetir la misma canción)."""
+        ids: set[str] = set()
+        if self.current_track is not None and self.current_track.id_youtube:
+            ids.add(self.current_track.id_youtube)
+        for q in self.get_queue_snapshot():
+            if q.id_youtube:
+                ids.add(q.id_youtube)
+        return ids
+
     def request_play(self, item: QueueItem) -> dict[str, Any]:
         if item.duration_seconds is None or item.duration_seconds > MAX_DURATION_SECONDS:
             return {
@@ -290,6 +300,17 @@ class PlayerEngine:
                 "creditos_disponibles": self.credits.get_credits(),
             }
 
+        if item.id_youtube in self._active_youtube_ids():
+            return {
+                "ok": False,
+                "error": "already_queued",
+                "detail": "Esa canción ya está en la lista.",
+                "creditos_disponibles": self.credits.get_credits(),
+                "state": self.state.value,
+                "queue": [q.to_dict() for q in self.get_queue_snapshot()],
+                "current": self.current_track.to_dict() if self.current_track else None,
+            }
+
         self._set_state(PlayerState.TRANSITION)
         self._fade_out_ambient()
 
@@ -311,6 +332,7 @@ class PlayerEngine:
             "creditos_disponibles": self.credits.get_credits(),
             "state": self.state.value,
             "queue": [q.to_dict() for q in snapshot],
+            "current": self.current_track.to_dict() if self.current_track else None,
         }
 
     def enqueue(self, item: QueueItem) -> list[QueueItem]:
@@ -586,8 +608,9 @@ class PlayerEngine:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            # Preferir sink: hdmi | aux/headphones/analog (jack 3.5 mm)
-            prefer = os.environ.get("ROCKOLA_AUDIO_SINK", "aux").strip().lower()
+            # Preferir sink: hyperx (USB) | aux (jack) | hdmi
+            prefer = os.environ.get("ROCKOLA_AUDIO_SINK", "hyperx").strip().lower()
+            want_hyperx = prefer in {"hyperx", "usb", "card", "sound", "kingston"}
             want_aux = prefer in {
                 "aux",
                 "headphones",
@@ -623,26 +646,43 @@ class PlayerEngine:
                     sink_lines.append(line)
 
             chosen_id: str | None = None
+            aux_prefer = ("headphones", "bcm2835", "mailbox", "built-in audio stereo")
+            ranked: list[tuple[int, str]] = []
             for line in sink_lines:
                 if "vol:" not in line:
                     continue
                 low = line.lower()
                 is_hdmi = "hdmi" in low
-                # Jack 3.5 en Pi OS: "Built-in Audio Stereo" (sin HDMI en el nombre).
+                is_hyperx = "hyperx" in low or "kingston" in low
                 if want_hdmi and not is_hdmi:
                     continue
-                if want_aux and is_hdmi:
+                if want_hyperx and not is_hyperx:
                     continue
-                if not want_hdmi and not want_aux:
+                if want_aux and (is_hdmi or is_hyperx or "logitech" in low):
+                    continue
+                if not want_hdmi and not want_aux and not want_hyperx:
                     if prefer.lower() not in low:
                         continue
                 parts = line.replace("│", " ").replace("*", " ").split()
+                sid = None
                 for p in parts:
                     if p.endswith(".") and p[:-1].isdigit():
-                        chosen_id = p[:-1]
+                        sid = p[:-1]
                         break
-                if chosen_id:
-                    break
+                if not sid:
+                    continue
+                score = 0
+                if want_hyperx and is_hyperx:
+                    score = 100
+                elif want_aux:
+                    for i, token in enumerate(aux_prefer):
+                        if token in low:
+                            score = 100 - i
+                            break
+                ranked.append((score, sid))
+            if ranked:
+                ranked.sort(key=lambda t: t[0], reverse=True)
+                chosen_id = ranked[0][1]
             if chosen_id:
                 subprocess.run(
                     ["wpctl", "set-default", chosen_id],

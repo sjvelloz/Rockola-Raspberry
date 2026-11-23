@@ -82,20 +82,25 @@ if [ -n "${LABWC_PID:-}" ] || LABWC_PID="$(pgrep -n labwc 2>/dev/null || true)";
 fi
 echo "Touch '${TOUCH_DEV}' → ${UI_OUT}"
 
-# Audio: sink preferido (ROCKOLA_AUDIO_SINK=aux|hdmi) + boost digital
+# Audio: sink preferido (ROCKOLA_AUDIO_SINK=hyperx|aux|hdmi) + mic karaoke abierto
 sleep 1
 if command -v wpctl >/dev/null 2>&1; then
   SINK_VOL="${ROCKOLA_SINK_VOLUME:-1.0}"
   wpctl set-volume @DEFAULT_AUDIO_SINK@ "$SINK_VOL" 2>/dev/null || true
-  PREFER_AUDIO="$(echo "${ROCKOLA_AUDIO_SINK:-aux}" | tr '[:upper:]' '[:lower:]')"
-  # Pi OS: jack = "Built-in Audio Stereo"; HDMI = "... (HDMI)"
-  SINKS_BLOCK="$(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p')"
+  PREFER_AUDIO="$(echo "${ROCKOLA_AUDIO_SINK:-hyperx}" | tr '[:upper:]' '[:lower:]')"
+  SINKS_BLOCK="$(wpctl status 2>/dev/null | sed -n '/Audio/,/Video/p' | sed -n '/Sinks:/,/Sources:/p')"
   case "$PREFER_AUDIO" in
     hdmi|tv|1)
       SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -i HDMI | head -1 | grep -oE '[0-9]+' | head -1)"
       ;;
+    hyperx|usb|card|sound|kingston)
+      SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -iE 'HyperX|Kingston' | head -1 | grep -oE '[0-9]+' | head -1)"
+      ;;
     aux|headphones|analog|jack|3.5|headphone)
-      SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -vi HDMI | head -1 | grep -oE '[0-9]+' | head -1)"
+      SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -viE 'HDMI|HyperX|Logitech' | grep -iE 'Headphones|bcm2835|mailbox|Built-in Audio Stereo' | head -1 | grep -oE '[0-9]+' | head -1)"
+      if [ -z "${SINK_ID:-}" ]; then
+        SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -viE 'HDMI|HyperX|Logitech' | head -1 | grep -oE '[0-9]+' | head -1)"
+      fi
       ;;
     *)
       SINK_ID="$(printf '%s\n' "$SINKS_BLOCK" | grep 'vol:' | grep -i "$PREFER_AUDIO" | head -1 | grep -oE '[0-9]+' | head -1)"
@@ -106,6 +111,19 @@ if command -v wpctl >/dev/null 2>&1; then
     wpctl set-volume "$SINK_ID" "$SINK_VOL" 2>/dev/null || true
     echo "Audio sink ($PREFER_AUDIO) → $SINK_ID vol=$SINK_VOL"
   fi
+fi
+
+# Karaoke: loopback permanente del mic → HyperX (reintenta si el dongle aparece tarde)
+chmod +x "$ROOT/scripts/karaoke-mic-loopback.sh" 2>/dev/null || true
+if [ -x "$ROOT/scripts/karaoke-mic-loopback.sh" ]; then
+  bash "$ROOT/scripts/karaoke-mic-loopback.sh" || true
+  (
+    while true; do
+      sleep 20
+      bash "$ROOT/scripts/karaoke-mic-loopback.sh" >/tmp/rockola-karaoke-watch.log 2>&1 || true
+    done
+  ) &
+  echo "Karaoke mic watch pid=$!"
 fi
 
 # Fondo negro SOLO en la tele
