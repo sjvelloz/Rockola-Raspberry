@@ -82,7 +82,7 @@ if [ -n "${LABWC_PID:-}" ] || LABWC_PID="$(pgrep -n labwc 2>/dev/null || true)";
 fi
 echo "Touch '${TOUCH_DEV}' → ${UI_OUT}"
 
-# Audio: sink preferido (ROCKOLA_AUDIO_SINK=hyperx|aux|hdmi) + mic karaoke abierto
+# Audio: sink preferido (ROCKOLA_AUDIO_SINK=hyperx|aux|hdmi). Karaoke OFF por defecto.
 sleep 1
 if command -v wpctl >/dev/null 2>&1; then
   SINK_VOL="${ROCKOLA_SINK_VOLUME:-1.0}"
@@ -113,18 +113,13 @@ if command -v wpctl >/dev/null 2>&1; then
   fi
 fi
 
-# Karaoke: loopback permanente del mic → HyperX (reintenta si el dongle aparece tarde)
-chmod +x "$ROOT/scripts/karaoke-mic-loopback.sh" 2>/dev/null || true
-if [ -x "$ROOT/scripts/karaoke-mic-loopback.sh" ]; then
-  bash "$ROOT/scripts/karaoke-mic-loopback.sh" || true
-  (
-    while true; do
-      sleep 20
-      bash "$ROOT/scripts/karaoke-mic-loopback.sh" >/tmp/rockola-karaoke-watch.log 2>&1 || true
-    done
-  ) &
-  echo "Karaoke mic watch pid=$!"
-fi
+# Karaoke desactivado al arrancar (música limpia). Se activa desde la UI.
+pkill -f 'pw-loopback.*rockola-karaoke' 2>/dev/null || true
+rm -f "${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid" 2>/dev/null || true
+pw-metadata -n settings 0 clock.force-quantum 0 2>/dev/null || true
+pw-metadata -n settings 0 clock.quantum 2048 2>/dev/null || true
+amixer -c 3 sset PCM 70 unmute 2>/dev/null || true
+echo "Karaoke OFF (activar en pantalla)"
 
 # Fondo negro SOLO en la tele
 pkill -x swaybg 2>/dev/null || true

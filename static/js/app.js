@@ -14,6 +14,7 @@
     searchInput: document.getElementById("search-input"),
     searchBtn: document.getElementById("search-btn"),
     clearSearchBtn: document.getElementById("clear-search-btn"),
+    karaokeBtn: document.getElementById("karaoke-btn"),
     topBtn: document.getElementById("top-btn"),
     results: document.getElementById("results"),
     resultsPane: document.querySelector(".results-pane"),
@@ -38,6 +39,8 @@
   let keyboardTarget = true;
   let birthdaySongs = null;
   let birthdayBusy = false;
+  let karaokeOn = false;
+  let karaokeBusy = false;
   /** @type {Set<string>} */
   let activeSongIds = new Set();
   /** Últimos resultados para re-pintar al cambiar la cola */
@@ -183,6 +186,38 @@
     const on = Boolean(paused);
     if (els.pauseIndicator) {
       els.pauseIndicator.hidden = !on;
+    }
+  }
+
+  function setKaraoke(on) {
+    karaokeOn = Boolean(on);
+    if (!els.karaokeBtn) return;
+    els.karaokeBtn.classList.toggle("is-on", karaokeOn);
+    els.karaokeBtn.setAttribute("aria-pressed", karaokeOn ? "true" : "false");
+    els.karaokeBtn.textContent = karaokeOn ? "Karaoke ON" : "Karaoke";
+  }
+
+  async function toggleKaraoke() {
+    if (!els.karaokeBtn || karaokeBusy) return;
+    karaokeBusy = true;
+    els.karaokeBtn.disabled = true;
+    try {
+      const res = await fetch("/api/karaoke/toggle", { method: "POST" });
+      const data = await res.json();
+      if (!data.ok && data.detail) {
+        showToast(data.detail, true);
+      }
+      setKaraoke(Boolean(data.enabled));
+      showToast(
+        data.enabled
+          ? "Karaoke ON — puedes cantar"
+          : "Karaoke OFF — música limpia"
+      );
+    } catch (_) {
+      showToast("No se pudo cambiar el karaoke", true);
+    } finally {
+      karaokeBusy = false;
+      els.karaokeBtn.disabled = false;
     }
   }
 
@@ -620,12 +655,14 @@
         refreshQueue();
       }
       if (data.type === "pause") setPaused(data.paused);
+      if (data.type === "karaoke") setKaraoke(data.enabled);
       if (data.type === "birthday_open") openBirthdayPicker();
       if (data.type === "error" && data.detail) {
         showToast(data.detail, true);
       }
       if (data.type === "snapshot") {
         applyQueuePayload(data);
+        if (data.karaoke != null) setKaraoke(data.karaoke);
         if (data.mpv_available === false) {
           showToast("Instala mpv para oír/ver el vídeo (winget install shinchiro.mpv)", true);
         }
@@ -650,6 +687,9 @@
   if (els.clearSearchBtn) {
     els.clearSearchBtn.addEventListener("click", clearSearchText);
   }
+  if (els.karaokeBtn) {
+    els.karaokeBtn.addEventListener("click", toggleKaraoke);
+  }
   els.topBtn.addEventListener("click", loadTop);
   els.searchInput.addEventListener("click", () => {
     keyboardTarget = true;
@@ -672,4 +712,8 @@
   refreshQueue();
   connectSocket();
   loadTop();
+  fetch("/api/karaoke")
+    .then((r) => r.json())
+    .then((d) => setKaraoke(Boolean(d.enabled)))
+    .catch(() => {});
 })();

@@ -110,6 +110,26 @@ input {
   border-bottom: 1px solid hsla(var(--hue), 90%, 60%, 0.25);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-karaoke {
+  min-width: 120px;
+  border-color: #8b93b3;
+  color: #d7dcf0;
+  background: rgba(20, 18, 38, 0.9);
+}
+
+.btn-karaoke.is-on {
+  border-color: #7cff00;
+  color: #e8ffc8;
+  background: rgba(20, 40, 12, 0.95);
+  box-shadow: 0 0 14px rgba(124, 255, 0, 0.3);
+}
+
 .brand {
   display: flex;
   align-items: center;

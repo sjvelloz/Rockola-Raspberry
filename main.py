@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from config import BIRTHDAY_SONGS
 from credits_manager import CreditsManager
 from database import get_top_canciones, init_db
+from karaoke_manager import KaraokeManager
 from player_engine import PlayerEngine, PlayerState, QueueItem
 from youtube_service import search_youtube
 
@@ -45,6 +46,10 @@ class EnqueueRequest(BaseModel):
 
 class BirthdayPlayRequest(BaseModel):
     id_youtube: str
+
+
+class KaraokeRequest(BaseModel):
+    enabled: bool
 
 
 class ConnectionManager:
@@ -127,7 +132,12 @@ def _notify_birthday_open() -> None:
     _broadcast_threadsafe({"type": "birthday_open"})
 
 
+def _notify_karaoke_changed(enabled: bool) -> None:
+    _broadcast_threadsafe({"type": "karaoke", "enabled": enabled})
+
+
 credits = CreditsManager(on_credits_changed=_notify_credits_changed)
+karaoke = KaraokeManager(on_changed=_notify_karaoke_changed)
 player = PlayerEngine(
     credits_manager=credits,
     on_state_changed=_notify_state_changed,
@@ -224,6 +234,24 @@ async def api_reboot() -> dict[str, Any]:
     return {"ok": True, "detail": "Reinicio solicitado"}
 
 
+@app.get("/api/karaoke")
+async def api_karaoke_get() -> dict[str, Any]:
+    """Estado del modo karaoke (mic abierto o música limpia)."""
+    return karaoke.status()
+
+
+@app.post("/api/karaoke")
+async def api_karaoke_set(body: KaraokeRequest) -> dict[str, Any]:
+    """Activa/desactiva karaoke. OFF = música perfecta; ON = mic a 1024."""
+    return await asyncio.to_thread(karaoke.set_enabled, body.enabled)
+
+
+@app.post("/api/karaoke/toggle")
+async def api_karaoke_toggle() -> dict[str, Any]:
+    """Alterna modo karaoke desde el botón táctil."""
+    return await asyncio.to_thread(karaoke.toggle)
+
+
 @app.get("/api/birthday/songs")
 async def api_birthday_songs() -> dict[str, Any]:
     """Lista fija de canciones de cumpleaños para el picker táctil."""
@@ -315,6 +343,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             "current": status["current"],
             "queue": status["queue"],
             "paused": status.get("paused", False),
+            "karaoke": karaoke.enabled,
         }
     )
     try:
