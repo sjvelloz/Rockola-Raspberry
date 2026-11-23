@@ -9,9 +9,9 @@ MIC_MATCH="${ROCKOLA_MIC_MATCH:-Logitech USB Microphone}"
 SINK_MATCH="${ROCKOLA_KARAOKE_SINK_MATCH:-HyperX|Kingston}"
 TAG="rockola-karaoke"
 PIDFILE="${XDG_RUNTIME_DIR}/rockola-karaoke-loopback.pid"
-# Solo el loopback del mic (NO clock.force-quantum global → la música sigue a 1024).
-# 256 ≈ ~5 ms de buffer software; el dongle inalámbrico sigue aportando su delay de radio.
-QUANTUM="${ROCKOLA_KARAOKE_QUANTUM:-256}"
+# 1024: la HyperX es USB full-speed; con 256/512 el mic genera xruns y ensucia la música.
+# El delay restante es sobre todo del dongle inalámbrico (no se puede quitar por software).
+QUANTUM="${ROCKOLA_KARAOKE_QUANTUM:-1024}"
 RATE="${ROCKOLA_KARAOKE_RATE:-48000}"
 LATENCY="${QUANTUM}/${RATE}"
 
