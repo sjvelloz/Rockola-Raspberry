@@ -44,7 +44,8 @@ if command -v amixer >/dev/null 2>&1; then
     name="$(cat /proc/asound/card${card}/id 2>/dev/null || true)"
     case "$name" in
       Microphone|mic*) amixer -c "$card" sset Mic 80% unmute 2>/dev/null || true ;;
-      Sound) amixer -c "$card" sset PCM 100% unmute 2>/dev/null || true ;;
+      # HyperX: 70 ≈ 0 dB. 75 era +5 dB y saturaba la música.
+      Sound) amixer -c "$card" sset PCM 70 unmute 2>/dev/null || true ;;
     esac
   done
 fi
